@@ -14,7 +14,126 @@ from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
+# ==========================================
+# 🎨 ДИЗАЙН В СТИЛЕ BITRIX24 (CSS)
+# ==========================================
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
+
+custom_css = """
+<style>
+    /* Скрываем стандартный хедер и футер Streamlit */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Основной фон приложения (светло-серый, как в рабочей области Б24) */
+    .stApp {
+        background-color: #f4f6f8;
+    }
+    
+    /* Контейнер контента */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        max-width: 1400px;
+    }
+    
+    /* Боковая панель (белая с легкой тенью) */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e5e7eb;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+    }
+    
+    /* Вкладки (стиль навигации Б24) */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 30px;
+        background-color: transparent;
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 0px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: transparent;
+        border: none;
+        color: #555555;
+        font-weight: 500;
+        font-size: 15px;
+        padding: 0 5px;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #0055ff !important;
+        border-bottom: 3px solid #0055ff !important;
+        font-weight: 600;
+    }
+    
+    /* Кнопки (общий стиль) */
+    .stButton>button {
+        border-radius: 6px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        border: 1px solid #d1d5db;
+        background-color: #ffffff;
+        color: #333333;
+    }
+    .stButton>button:hover {
+        border-color: #0055ff;
+        color: #0055ff;
+        background-color: #f8faff;
+    }
+    
+    /* Главные кнопки (синие, как "Создать" в Б24) */
+    .stButton>button[kind="primary"] {
+        background-color: #0055ff;
+        color: white;
+        border: none;
+        box-shadow: 0 2px 4px rgba(0, 85, 255, 0.2);
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #0044cc;
+        box-shadow: 0 4px 8px rgba(0, 85, 255, 0.3);
+        color: white;
+    }
+    
+    /* Поля ввода */
+    .stTextInput>div>div>input, 
+    .stNumberInput>div>div>input, 
+    .stDateInput>div>div>input,
+    .stSelectbox>div>div>div {
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+        background-color: #ffffff;
+    }
+    .stTextInput>div>div>input:focus, 
+    .stNumberInput>div>div>input:focus, 
+    .stDateInput>div>div>input:focus {
+        border-color: #0055ff;
+        box-shadow: 0 0 0 1px #0055ff;
+    }
+    
+    /* Таблицы (Data Editor) */
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        background-color: #ffffff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    
+    /* Заголовки */
+    h1, h2, h3 {
+        color: #1f2937;
+        font-weight: 600;
+    }
+    
+    /* Уведомления (Info, Success, Error) */
+    .stAlert {
+        border-radius: 8px;
+        border: none;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==========================================
 # 1. ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ
@@ -56,7 +175,7 @@ MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Ма
 
 # Заливки
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
-NO_FILL = PatternFill(fill_type=None) # Пустая заливка (белая)
+NO_FILL = PatternFill(fill_type=None) 
 
 # ==========================================
 # 4. ИНИЦИАЛИЗАЦИЯ СЕССИИ
@@ -276,7 +395,7 @@ def generate_and_download():
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
         # ---------------------------------------------------------
-        # 7.2. ГРАФИК (xlsx) - ОЧИЩАЕМ ВСЕ ЦВЕТА
+        # 7.2. ГРАФИК (xlsx) 
         # ---------------------------------------------------------
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
@@ -289,14 +408,12 @@ def generate_and_download():
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         
-        # Ставим дни и убираем заливку в шапке (строки 1, 2, 3)
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
             for r_idx in [1, 2, 3]:
                 cell_header = ws_gr.cell(row=r_idx, column=3 + d)
                 cell_header.fill = NO_FILL
             
-        # Ищем колонку ИТОГО (динамически)
         itogo_col = None
         for c_idx in range(4, 50):
             for r_idx in [1, 2, 3]:
@@ -320,7 +437,6 @@ def generate_and_download():
         last_day_col_letter = get_column_letter(3 + num_days)
         last_emp_row = block_r + len(st.session_state.staff_roster)
         
-        # Очищаем заливку в столбцах A, B, C для всей таблицы (от шапки до последнего сотрудника)
         for r_idx in range(1, last_emp_row + 1):
             for c_idx in [1, 2, 3]:
                 ws_gr.cell(row=r_idx, column=c_idx).fill = NO_FILL
@@ -331,14 +447,12 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            # ОЧИЩАЕМ ДИАПАЗОН ДНЕЙ
             for c_idx in range(4, 3 + num_days + 1):
                 cell_to_clear = ws_gr.cell(row=r, column=c_idx)
                 cell_to_clear.value = None
                 cell_to_clear.fill = NO_FILL 
                 cell_to_clear.comment = None
 
-            # СТАВИМ НОВЫЕ СМЕНЫ
             for day_str, data in st.session_state.shifts.items():
                 timesheet_emps = data.get("timesheet", [])
                 graph_only_dict = data.get("graph_only", {})
