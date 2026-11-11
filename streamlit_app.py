@@ -46,10 +46,7 @@ MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Ма
 _defaults = {
     "rates": DEFAULT_RATES,
     "active_month": "", "active_year": "", "current_id": None,
-    "shifts": {},       # {"5": ["Иванов", "Петров"]}
-    "tonnage": {},      # {"5": 150.5}
-    "subordinates": [], # [{"fio": "...", "post": "...", "grade": "...", "date": "05.11", "amount": 4500}]
-    "staff_list": []    # Список сотрудников, считанный из шаблона
+    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_list": []
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -82,11 +79,7 @@ def read_staff_from_template():
 def save_to_db():
     if not supabase or not st.session_state.current_id: return
     try:
-        payload = {
-            "shifts": st.session_state.shifts,
-            "tonnage": st.session_state.tonnage,
-            "subordinates": st.session_state.subordinates
-        }
+        payload = {"shifts": st.session_state.shifts, "tonnage": st.session_state.tonnage, "subordinates": st.session_state.subordinates}
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
         supabase.table("app_data").update(data).eq("id", st.session_state.current_id).execute()
@@ -113,7 +106,7 @@ def load_from_db(record_id):
 # ---------- ГЕНЕРАЦИЯ И СКАЧИВАНИЕ ----------
 def generate_and_download():
     if not all(os.path.exists(f) for f in [TPL_PF, TPL_SUB, TPL_GRAPH, TPL_SH]):
-        st.error("Шаблоны не найдены на GitHub! Загрузите оригинальные файлы.")
+        st.error("Шаблоны не найдены на GitHub!")
         return None
 
     zip_buf = io.BytesIO()
@@ -121,8 +114,10 @@ def generate_and_download():
     y_val = st.session_state.active_year
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. ТАБЕЛЬ (xlsm)
+        # 1. ТАБЕЛЬ ПОЛУФАБРИКАТЫ (xlsm)
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
+        wb_pf.calculation.fullCalcOnLoad = True
+
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_sheet in emps:
@@ -131,29 +126,47 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
+        # Заполняем "Итог" в табеле значениями (без формул)
+        if "Итог" in wb_pf.sheetnames:
+            ws_it = wb_pf["Итог"]
+            for r in range(2, 50):
+                fio_cell = ws_it.cell(row=r, column=1).value
+                if fio_cell and str(fio_cell).strip().lower() not in ("итого:", "", "none"):
+                    sheet_name = str(fio_cell).strip()
+                    if sheet_name in wb_pf.sheetnames:
+                        shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
+                        rate = 4500
+                        for emp in st.session_state.staff_list:
+                            if emp["sheet"] == sheet_name:
+                                rate = get_rate(emp["post"], emp.get("grade", "")) or 4500
+                                break
+                        ws_it.cell(row=r, column=2, value=shifts_count * rate)
+                        ws_it.cell(row=r, column=3, value=shifts_count)
+                elif fio_cell and str(fio_cell).strip().lower() == "итого:":
+                    ws_it.cell(row=r, column=2, value=f"=SUM(B2:B{r-1})")
+                    ws_it.cell(row=r, column=3, value=f"=SUM(C2:C{r-1})")
+
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
         # 2. ГРАФИК (xlsx)
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
+        wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
         ws_gr['A1'] = m_name
         try: ws_gr.title = f"{m_name} {y_val}"
         except: pass
         
-        # Жестко прописываем даты (1..31) в строку 2, начиная с 4-й колонки (D)
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
         
-        # Ищем строки сотрудников
         block_r = 4
         for r in range(1, 120):
             if "полуфабрикат" in str(ws_gr.cell(row=r, column=1).value or "").lower():
                 block_r = r; break
         
-        # Ставим смены
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             col_idx = 3 + day
@@ -169,40 +182,59 @@ def generate_and_download():
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # 3. ПОДРАБОТЧИКИ (xlsm) - создаем листы и обновляем Итог
+        # 3. ПОДРАБОТЧИКИ (xlsm)
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
+        wb_sub.calculation.fullCalcOnLoad = True
+        
         tpl_sub = wb_sub[wb_sub.sheetnames[0] if wb_sub.sheetnames[0] != 'Итог' else wb_sub.sheetnames[1]]
         
+        subs_by_fio = {}
         for sub in st.session_state.subordinates:
             title = sub["fio"][:31]
             if title not in wb_sub.sheetnames:
                 new_ws = wb_sub.copy_worksheet(tpl_sub); new_ws.title = title
-                for r in range(2, 33): new_ws.cell(row=r, column=2).value = None
+                for r in range(2, 33): 
+                    new_ws.cell(row=r, column=2).value = None
+                    new_ws.cell(row=r, column=3).value = None # Очищаем и суммы
+            
             day = int(sub["date"].split(".")[0])
             wb_sub[title].cell(row=day + 1, column=2, value=1)
             wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"])
+            
+            if title not in subs_by_fio:
+                subs_by_fio[title] = {"amount": 0.0, "shifts": 0}
+            subs_by_fio[title]["amount"] += float(sub["amount"])
+            subs_by_fio[title]["shifts"] += 1
         
-        # Обновляем лист "Итог" в подработчиках
+        # Заполняем "Итог" в подработчиках готовыми цифрами
         if "Итог" in wb_sub.sheetnames:
             ws_it = wb_sub["Итог"]
-            for r in range(2, 100): # Очищаем старые данные
+            itogo_row = 50
+            for r in range(2, 50):
+                if str(ws_it.cell(row=r, column=1).value or "").strip().upper() == "ИТОГО:":
+                    itogo_row = r
+                    break
                 ws_it.cell(row=r, column=1).value = None
                 ws_it.cell(row=r, column=2).value = None
                 ws_it.cell(row=r, column=3).value = None
             
-            for i, sub in enumerate(st.session_state.subordinates):
+            for i, (fio, data) in enumerate(subs_by_fio.items()):
                 r = 2 + i
-                title = sub["fio"][:31]
-                ws_it.cell(row=r, column=1, value=title)
-                # Пишем формулы (J33 - сумма, B33 - смены. Если в вашем шаблоне другие ячейки, поменяйте тут)
-                ws_it.cell(row=r, column=2, value=f"='{title}'!J33")
-                ws_it.cell(row=r, column=3, value=f"='{title}'!B33")
+                if r < itogo_row:
+                    ws_it.cell(row=r, column=1, value=fio)
+                    ws_it.cell(row=r, column=2, value=data["amount"])
+                    ws_it.cell(row=r, column=3, value=data["shifts"])
+
+            if itogo_row < 50:
+                ws_it.cell(row=itogo_row, column=2, value=f"=SUM(B2:B{itogo_row-1})")
+                ws_it.cell(row=itogo_row, column=3, value=f"=SUM(C2:C{itogo_row-1})")
                 
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
         # 4. ШАШИНА (xlsx)
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
+        wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
             ws_sh = wb_sh["ПФ"]
             start_row = 4
