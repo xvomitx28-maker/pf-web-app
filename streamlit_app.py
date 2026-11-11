@@ -120,7 +120,6 @@ def get_template_name(base_name, dept_id, ext):
     return f"{base_name}_{dept_id}.{ext}"
 
 def load_initial_staff(dept_id):
-    """Вытаскивает сотрудников прямо из загруженного Excel-шаблона на GitHub"""
     tpl_name = get_template_name("tpl_tabel", dept_id, "xlsm")
     if not os.path.exists(tpl_name): return []
     wb = load_workbook(io.BytesIO(open(tpl_name, "rb").read()), keep_vba=True)
@@ -171,7 +170,6 @@ def load_global_settings():
             if not st.session_state.rates:
                 st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
         else:
-            # АВТОВОССТАНОВЛЕНИЕ: Если база пуста, сами подтягиваем штат из шаблона!
             st.session_state.staff_roster = load_initial_staff(dept_id)
             st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
             save_global_settings()
@@ -285,7 +283,7 @@ def generate_and_download():
         buf = io.BytesIO(); wb_pf.save(buf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf.getvalue())
 
-        # 5.2. ГРАФИК
+        # 5.2. ГРАФИК (Считаем в Python)
         wb_gr = load_workbook(io.BytesIO(open(tpl_gr_name, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -332,10 +330,13 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
+            # Очищаем дни
             for c_idx in range(4, 35):
                 cell = ws_gr.cell(row=r, column=c_idx)
                 cell.value = None; cell.fill = NO_FILL; cell.comment = None
 
+            # Считаем смены в Python
+            shifts_count = 0
             for day_str, data in st.session_state.shifts.items():
                 day = int(day_str); col_idx = 3 + day
                 hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
@@ -345,10 +346,13 @@ def generate_and_download():
                     cell = ws_gr.cell(row=r, column=col_idx, value=hours)
                     cell.fill = ORANGE_FILL 
                     cell.comment = Comment(text=f"Подработка: {dept_name}" if dept_name else "Подработка", author="Система")
+                    shifts_count += 1
                 elif emp["full_name"] in data.get("timesheet", []):
                     ws_gr.cell(row=r, column=col_idx, value=hours)
+                    shifts_count += 1
             
-            ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:AI{r})")
+            # Записываем готовое число
+            ws_gr.cell(row=r, column=itogo_col, value=shifts_count)
         
         ws_gr.delete_rows(block_r + 1 + len(st.session_state.staff_roster), 100)
         buf = io.BytesIO(); wb_gr.save(buf)
@@ -552,7 +556,6 @@ with tab1:
 
         st.markdown("**Кого отметить?**")
         selected = {}
-        # Табличный вид: Имя | Смена | Подработка | Цех
         for emp in st.session_state.staff_roster:
             col1, col2, col3, col4 = st.columns([4, 2, 2, 3])
             with col1:
