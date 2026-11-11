@@ -11,11 +11,14 @@ import re
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.comments import Comment
+from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
 
-# ---------- ПОДКЛЮЧЕНИЕ К БАЗЕ ----------
+# ==========================================
+# 1. ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ
+# ==========================================
 @st.cache_resource
 def init_connection():
     try:
@@ -25,14 +28,19 @@ def init_connection():
 
 supabase = init_connection()
 
-# ---------- НАЗВАНИЯ ШАБЛОНОВ ----------
+# ==========================================
+# 2. НАЗВАНИЯ ФАЙЛОВ-ШАБЛОНОВ
+# ==========================================
 TPL_PF = "tpl_pf.xlsm"
 TPL_SUB = "tpl_sub.xlsm"
 TPL_GRAPH = "tpl_graph.xlsx"
 TPL_SH = "tpl_sh.xlsx"
 
-# ---------- БАЗОВЫЕ НАСТРОЙКИ ----------
+# ==========================================
+# 3. БАЗОВЫЕ НАСТРОЙКИ И КОНСТАНТЫ
+# ==========================================
 POSITIONS_LIST = ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"]
+
 DEFAULT_RATES = [
     {"post": "Весовщик", "grade": "", "rate": 5000},
     {"post": "Грузчик", "grade": "", "rate": 4300},
@@ -43,12 +51,15 @@ DEFAULT_RATES = [
     {"post": "Оператор линии", "grade": "", "rate": 4500},
     {"post": "Бригадир", "grade": "", "rate": 4500},
 ]
+
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
-# Оранжевая заливка
+# Оранжевая заливка для подработчиков в графике
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
 
-# ---------- ИНИЦИАЛИЗАЦИЯ ----------
+# ==========================================
+# 4. ИНИЦИАЛИЗАЦИЯ СЕССИИ
+# ==========================================
 _defaults = {
     "active_month": "", "active_year": "", "current_id": None,
     "shifts": {}, 
@@ -59,7 +70,9 @@ for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ---------- ХЕЛПЕРЫ ----------
+# ==========================================
+# 5. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ==========================================
 def clean_name(name):
     return re.sub(r'[^а-яё]', '', str(name).lower())
 
@@ -98,7 +111,9 @@ def load_initial_staff():
         })
     return res
 
-# ---------- ГЛОБАЛЬНЫЕ НАСТРОЙКИ ----------
+# ==========================================
+# 6. РАБОТА С БАЗОЙ ДАННЫХ (SUPABASE)
+# ==========================================
 def save_global_settings():
     if not supabase: return
     try:
@@ -116,7 +131,7 @@ def save_global_settings():
             data["id"] = "GLOBAL_SETTINGS"
             supabase.table("app_data").insert(data).execute()
     except Exception as e:
-        st.error(f"Ошибка сохранения: {e}")
+        st.error(f"Ошибка сохранения глобальных настроек: {e}")
 
 def load_global_settings():
     if not supabase: return
@@ -132,9 +147,8 @@ def load_global_settings():
             st.session_state.rates = DEFAULT_RATES
             save_global_settings()
     except Exception as e:
-        st.error(f"Ошибка загрузки: {e}")
+        st.error(f"Ошибка загрузки глобальных настроек: {e}")
 
-# ---------- СОХРАНЕНИЕ МЕСЯЦА ----------
 def save_month_to_db():
     if not supabase or not st.session_state.current_id: return
     try:
@@ -147,7 +161,7 @@ def save_month_to_db():
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
         supabase.table("app_data").update(data).eq("id", st.session_state.current_id).execute()
     except Exception as e:
-        st.error(f"Ошибка сохранения: {e}")
+        st.error(f"Ошибка сохранения месяца: {e}")
 
 def load_month_from_db(record_id):
     if not supabase: return False
@@ -175,22 +189,25 @@ def load_month_from_db(record_id):
             st.session_state.active_month, st.session_state.active_year = record_id.split("_")
             return True
     except Exception as e:
-        st.error(f"Ошибка загрузки: {e}")
+        st.error(f"Ошибка загрузки месяца: {e}")
     return False
 
-# ---------- ГЕНЕРАЦИЯ ----------
+# ==========================================
+# 7. ФОРМИРОВАНИЕ EXCEL-ФАЙЛОВ (ГЕНЕРАЦИЯ)
+# ==========================================
 def generate_and_download():
     zip_buf = io.BytesIO()
     m_name = st.session_state.active_month
     y_val = st.session_state.active_year
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # ================= 1. ТАБЕЛЬ (xlsm) =================
+        # ---------------------------------------------------------
+        # 7.1. ТАБЕЛЬ (xlsm)
+        # ---------------------------------------------------------
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
         wb_pf.calculation.calcMode = 'auto'
 
-        # Берем один любой лист-образец
         tpl_pf_name = None
         for s_name in wb_pf.sheetnames:
             if s_name not in ("Итог", "рубкг"):
@@ -199,34 +216,28 @@ def generate_and_download():
         
         if not tpl_pf_name: return None
 
-        # Удаляем старые карточки (кроме Итог, рубкг и образца)
         for s_name in list(wb_pf.sheetnames):
             if s_name not in ("Итог", "рубкг", tpl_pf_name):
                 del wb_pf[s_name]
 
-        # Создаем карточки
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
-            sheet_name = name[:31] # Обрезаем до 31 символа (ограничение Excel)
+            sheet_name = name[:31]
             
             if sheet_name not in wb_pf.sheetnames:
                 if tpl_pf_name in wb_pf.sheetnames:
                     new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
                     new_ws.title = sheet_name
                     for r in range(2, 33):
-                        # Чистим только выходы и ставим ставку. Формулы в H и J НЕ ТРОГАЕМ.
                         cell_b = new_ws.cell(row=r, column=2)
                         if cell_b.data_type != 'f': cell_b.value = None 
-                        
                         cell_c = new_ws.cell(row=r, column=3)
                         if cell_c.data_type != 'f': cell_c.value = rate_val 
 
-        # Удаляем сам образец, если его нет в реестре
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
-        # Ставим смены (1 в колонку Выход)
         for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
             timesheet_emps = data.get("timesheet", [])
@@ -238,7 +249,6 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Лист "Итог" с формулами-ссылками
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -251,8 +261,6 @@ def generate_and_download():
                 name = emp["full_name"]
                 sheet_name = name[:31]
                 ws_it.cell(row=r, column=1, value=name)
-                
-                # Ссылки на формулы из карточки сотрудника (J33 - деньги, B33 - смены)
                 ws_it.cell(row=r, column=2, value=f"='{sheet_name}'!J33")
                 ws_it.cell(row=r, column=3, value=f"='{sheet_name}'!B33")
                 
@@ -266,7 +274,9 @@ def generate_and_download():
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # ================= 2. ГРАФИК (xlsx) =================
+        # ---------------------------------------------------------
+        # 7.2. ГРАФИК (xlsx) - ИСПРАВЛЕННЫЙ БЛОК
+        # ---------------------------------------------------------
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         wb_gr.calculation.calcMode = 'auto'
@@ -277,8 +287,23 @@ def generate_and_download():
         
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
+        
+        # Ставим дни
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
+            
+        # Ищем колонку ИТОГО (динамически)
+        itogo_col = None
+        for c_idx in range(4, 50):
+            for r_idx in [1, 2, 3]:
+                val = ws_gr.cell(row=r_idx, column=c_idx).value
+                if val and str(val).strip().upper() == "ИТОГО":
+                    itogo_col = c_idx
+                    break
+            if itogo_col: break
+            
+        if not itogo_col:
+            itogo_col = 4 + num_days
         
         block_r = 4
         for r in range(1, 50):
@@ -288,12 +313,22 @@ def generate_and_download():
                     break
             if block_r > 4: break
             
+        last_day_col_letter = get_column_letter(3 + num_days)
+        
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
+            # ОЧИЩАЕМ ВЕСЬ ДИАПАЗОН ДНЕЙ ДЛЯ ЭТОГО СОТРУДНИКА ОТ СТАРЫХ ДАННЫХ
+            for c_idx in range(4, 3 + num_days + 1):
+                cell_to_clear = ws_gr.cell(row=r, column=c_idx)
+                cell_to_clear.value = None
+                cell_to_clear.fill = PatternFill(fill_type=None) # Снимаем заливку, если была
+                cell_to_clear.comment = None # Удаляем старые комментарии
+
+            # ТЕПЕРЬ СТАВИМ НОВЫЕ СМЕНЫ
             for day_str, data in st.session_state.shifts.items():
                 timesheet_emps = data.get("timesheet", [])
                 graph_only_dict = data.get("graph_only", {})
@@ -316,8 +351,8 @@ def generate_and_download():
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
             
-            # Считаем КОЛИЧЕСТВО смен (выходов), а не сумму часов
-            ws_gr.cell(row=r, column=36, value=f"=COUNT(D{r}:AI{r})")
+            # Считаем КОЛИЧЕСТВО смен (выходов) строго с первого по последний день
+            ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:{last_day_col_letter}{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
         ws_gr.delete_rows(start_delete_row, 100)
@@ -325,7 +360,9 @@ def generate_and_download():
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # ================= 3. ПОДРАБОТЧИКИ (xlsm) =================
+        # ---------------------------------------------------------
+        # 7.3. ПОДРАБОТЧИКИ (xlsm)
+        # ---------------------------------------------------------
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         wb_sub.calculation.fullCalcOnLoad = True
         wb_sub.calculation.calcMode = 'auto'
@@ -392,7 +429,9 @@ def generate_and_download():
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
-        # ================= 4. ШАШИНА (xlsx) =================
+        # ---------------------------------------------------------
+        # 7.4. ВЕДОМОСТЬ ШАШИНОЙ (xlsx)
+        # ---------------------------------------------------------
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
@@ -412,12 +451,16 @@ def generate_and_download():
 
     return zip_buf.getvalue()
 
-# ---------- ЗАГРУЗКА ПРИ СТАРТЕ ----------
+# ==========================================
+# 8. ЗАГРУЗКА ПРИ СТАРТЕ
+# ==========================================
 if "initialized" not in st.session_state:
     load_global_settings()
     st.session_state["initialized"] = True
 
-# ---------- ИНТЕРФЕЙС ----------
+# ==========================================
+# 9. ИНТЕРФЕЙС (SIDEBAR)
+# ==========================================
 st.sidebar.header("🗓️ Текущий период")
 if st.session_state.active_month:
     st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
@@ -448,7 +491,9 @@ if supabase:
                     st.rerun()
     except: pass
 
-# ---------- ОСНОВНОЙ ЭКРАН ----------
+# ==========================================
+# 10. ОСНОВНОЙ ЭКРАН (ВКЛАДКИ)
+# ==========================================
 st.title(f"📊 Отделение Полуфабрикатов — {st.session_state.active_month} {st.session_state.active_year}" if st.session_state.active_month else "📊 Учёт выработки")
 
 tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки", "👥 Кадры"])
