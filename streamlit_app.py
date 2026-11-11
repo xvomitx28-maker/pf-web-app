@@ -10,6 +10,7 @@ import json
 import re
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+from openpyxl.comments import Comment
 from supabase import create_client, Client
 
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
@@ -208,7 +209,6 @@ def generate_and_download():
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
             
-            # Считаем смены для этого сотрудника
             shifts_count = sum(1 for d, data in st.session_state.shifts.items() if name in data.get("timesheet", []))
             total_money = shifts_count * rate_val
             
@@ -226,14 +226,12 @@ def generate_and_download():
                             if new_ws.cell(row=r, column=c).data_type != 'f':
                                 new_ws.cell(row=r, column=c).value = None
                     
-                    # Вписываем итоги внизу карточки напрямую числами
                     new_ws.cell(row=33, column=2, value=shifts_count)
                     new_ws.cell(row=33, column=10, value=total_money)
 
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
-        # Ставим смены
         for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
             timesheet_emps = data.get("timesheet", [])
@@ -244,7 +242,6 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Лист "Итог"
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -265,7 +262,6 @@ def generate_and_download():
                 
             itogo_r = 2 + len(st.session_state.staff_roster)
             ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
-            # Вписываем общие суммы напрямую числами
             ws_it.cell(row=itogo_r, column=2, value=total_all_money)
             ws_it.cell(row=itogo_r, column=3, value=total_all_shifts)
             
@@ -310,14 +306,22 @@ def generate_and_download():
                 hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
                 
                 if emp["full_name"] in graph_only_dict:
+                    dept_name = graph_only_dict[emp["full_name"]]
                     cell = ws_gr.cell(row=r, column=col_idx, value=hours)
                     cell.fill = ORANGE_FILL
+                    
+                    # ДОБАВЛЯЕМ ПРИМЕЧАНИЕ (КОММЕНТАРИЙ)
+                    if dept_name:
+                        comment_text = f"Подработка: {dept_name}"
+                    else:
+                        comment_text = "Подработка в другом цехе"
+                    cell.comment = Comment(text=comment_text, author="Система учёта")
+                    
                     total_hours += hours
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
                     total_hours += hours
             
-            # Вписываем итог по часам напрямую (Колонка AJ = 36)
             ws_gr.cell(row=r, column=36, value=total_hours)
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
@@ -360,7 +364,6 @@ def generate_and_download():
             subs_by_fio[title]["amount"] += float(sub["amount"])
             subs_by_fio[title]["shifts"] += 1
             
-        # Заполняем итоги в карточках подработчиков
         for title, data in subs_by_fio.items():
             if title in wb_sub.sheetnames:
                 wb_sub[title].cell(row=33, column=2, value=data["shifts"])
