@@ -29,6 +29,10 @@ TPL_SUB = "tpl_sub.xlsm"
 TPL_GRAPH = "tpl_graph.xlsx"
 TPL_SH = "tpl_sh.xlsx"
 
+# ---------- БАЗОВЫЕ НАСТРОЙКИ (Должности для выпадающего списка) ----------
+POSITIONS_LIST = ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"]
+MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
 # ---------- ИНИЦИАЛИЗАЦИЯ ----------
 _defaults = {
     "active_month": "", "active_year": "", "current_id": None,
@@ -38,15 +42,11 @@ for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-
 # ---------- ХЕЛПЕРЫ ----------
 def clean_name(name):
-    """Удаляет все лишние символы, оставляя только буквы для надежного поиска"""
     return re.sub(r'[^а-яё]', '', str(name).lower())
 
 def make_short_name(full_name):
-    """Автоматически создает короткое имя: Рузиева Шазие -> Рузиева Ш."""
     parts = str(full_name).strip().split()
     if len(parts) > 1:
         return f"{parts[0]} {parts[1][0]}."
@@ -68,7 +68,8 @@ def load_initial_staff():
         res.append({
             "full_name": sname, 
             "short_name": make_short_name(sname), 
-            "post": post
+            "post": post,
+            "grade": "—" # Добавили поле разряда
         })
     return res
 
@@ -117,7 +118,7 @@ def generate_and_download():
     y_val = st.session_state.active_year
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. ТАБЕЛЬ (xlsm) - Единый кадровый шаблон
+        # 1. ТАБЕЛЬ (xlsm)
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
 
@@ -129,6 +130,7 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
+        # Заполняем лист "Итог" в табеле
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -146,7 +148,7 @@ def generate_and_download():
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # 2. ГРАФИК (xlsx) - Единый кадровый шаблон
+        # 2. ГРАФИК (xlsx)
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -180,11 +182,10 @@ def generate_and_download():
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # 3. ПОДРАБОТЧИКИ (xlsm) - Только пофамильно, динамически
+        # 3. ПОДРАБОТЧИКИ (xlsm)
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         wb_sub.calculation.fullCalcOnLoad = True
         
-        # Находим лист-шаблон (все, что не Итог)
         tpl_sheet_name = None
         for s in wb_sub.sheetnames:
             if s != "Итог":
@@ -195,7 +196,6 @@ def generate_and_download():
             st.error("В файле tpl_sub.xlsm нет листа-шаблона! Оставьте один пустой лист.")
             return None
             
-        # Удаляем все старые листы (кроме Итога и Шаблона)
         for s in list(wb_sub.sheetnames):
             if s not in ("Итог", tpl_sheet_name):
                 del wb_sub[s]
@@ -219,11 +219,10 @@ def generate_and_download():
             subs_by_fio[title]["amount"] += float(sub["amount"])
             subs_by_fio[title]["shifts"] += 1
             
-        # Удаляем сам лист-шаблон, чтобы он не попал в итоговый файл
         if tpl_sheet_name in wb_sub.sheetnames:
             del wb_sub[tpl_sheet_name]
         
-        # Заполняем Итог
+        # Заполняем Итог в подработчиках
         if "Итог" in wb_sub.sheetnames:
             ws_it = wb_sub["Итог"]
             itogo_row = 50
@@ -249,7 +248,7 @@ def generate_and_download():
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
-        # 4. ШАШИНА (xlsx) - Только пофамильно
+        # 4. ШАШИНА (xlsx)
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
@@ -260,7 +259,7 @@ def generate_and_download():
                 ws_sh.cell(row=r, column=2, value=i+1)
                 ws_sh.cell(row=r, column=3, value=sub["short_name"])
                 ws_sh.cell(row=r, column=4, value=sub["post"])
-                ws_sh.cell(row=r, column=5, value=sub["grade"])
+                ws_sh.cell(row=r, column=5, value=sub.get("grade", ""))
                 ws_sh.cell(row=r, column=6, value=11)
                 ws_sh.cell(row=r, column=8, value=sub["date"])
                 ws_sh.cell(row=r, column=9, value=sub["amount"])
@@ -355,7 +354,11 @@ with tab1:
         st.markdown("**Кого отметить?**")
         selected = {}
         for emp in st.session_state.staff_roster:
-            selected[emp["full_name"]] = st.checkbox(f"{emp['short_name']} — {emp['post']}", key=f"chk_{emp['full_name']}")
+            # Выводим должность и разряд, чтобы было понятно
+            label = f"{emp['short_name']} — {emp['post']}"
+            if emp.get('grade') and emp['grade'] != "—":
+                label += f" ({emp['grade']})"
+            selected[emp["full_name"]] = st.checkbox(label, key=f"chk_{emp['full_name']}")
 
         if st.button("💾 Провести смену", type="primary"):
             day_str = str(shift_date.day)
@@ -387,7 +390,7 @@ with tab2:
         st.subheader("Внесение подработки (Пофамильно)")
         c1, c2 = st.columns(2)
         with c1:
-            fio = st.text_input("ФИО подработчика (например, Иванов И.И. или просто Иванов И.)")
+            fio = st.text_input("ФИО подработчика (например, Иванов И.)")
             post = st.text_input("Должность", value="Изготовитель мясных п/ф")
             grade = st.text_input("Разряд", value="")
         with c2:
@@ -399,7 +402,7 @@ with tab2:
                 st.error("Укажите ФИО")
             else:
                 st.session_state.subordinates.append({
-                    "short_name": fio.strip(), # Для подработок используем то, что ввели
+                    "short_name": fio.strip(), 
                     "post": post, "grade": grade,
                     "date": sub_date.strftime("%d.%m.%Y"), "amount": float(amount)
                 })
@@ -412,7 +415,7 @@ with tab2:
         if st.session_state.subordinates:
             df_sub = pd.DataFrame(st.session_state.subordinates)
             if not df_sub.empty:
-                st.table(df_sub[["short_name", "post", "date", "amount"]])
+                st.table(df_sub[["short_name", "post", "grade", "date", "amount"]])
         else:
             st.write("Пока нет записей.")
 
@@ -424,44 +427,54 @@ with tab3:
 # ================= TAB 4: КАДРЫ =================
 with tab4:
     st.subheader("Управление штатом")
-    st.info("Задайте здесь эталонные ФИО. Программа использует Полное ФИО для Графика и Табеля, а Короткое — для удобства на экране.")
+    st.info("Дважды кликните по ячейке, чтобы изменить ФИО, должность или разряд. Внизу таблицы можно добавить новую строку.")
     
-    # Форма добавления
-    with st.expander("➕ Добавить нового сотрудника в штат"):
-        c1, c2, c3 = st.columns(3)
-        with c1: new_full = st.text_input("Полное ФИО (как в Табеле/Графике)")
-        with c2: new_short = st.text_input("Короткое ФИО (для списков)")
-        with c3: new_post = st.selectbox("Должность", ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик"])
-        
-        if st.button("Добавить в штат"):
-            if new_full and new_short:
-                st.session_state.staff_roster.append({
-                    "full_name": new_full.strip(), "short_name": new_short.strip(), "post": new_post
-                })
-                save_to_db()
-                st.success("Сотрудник добавлен!")
-                st.rerun()
-            else:
-                st.error("Заполните все поля!")
-                
-    # Таблица штата
-    st.markdown("**Текущий штат:**")
     if st.session_state.staff_roster:
+        # Конвертируем список в DataFrame
         df_staff = pd.DataFrame(st.session_state.staff_roster)
-        df_staff = df_staff.rename(columns={"full_name": "Полное ФИО", "short_name": "Короткое ФИО", "post": "Должность"})
         
-        # Удаление сотрудника
-        to_delete = st.selectbox("Выберите сотрудника для увольнения:", [s["full_name"] for s in st.session_state.staff_roster])
-        if st.button("🚫 Удалить из штата"):
-            st.session_state.staff_roster = [s for s in st.session_state.staff_roster if s["full_name"] != to_delete]
-            # Также удаляем его смены из текущего месяца
-            for day in st.session_state.shifts:
-                if to_delete in st.session_state.shifts[day]:
-                    st.session_state.shifts[day].remove(to_delete)
-            save_to_db()
-            st.success(f"{to_delete} уволен.")
-            st.rerun()
+        # Переименовываем колонки для отображения
+        df_staff = df_staff.rename(columns={
+            "full_name": "Полное ФИО", 
+            "short_name": "Короткое ФИО", 
+            "post": "Должность", 
+            "grade": "Разряд"
+        })
+        
+        # Выводим интерактивный редактор
+        edited_df = st.data_editor(
+            df_staff,
+            num_rows="dynamic", # Позволяет добавлять и удалять строки
+            use_container_width=True,
+            column_config={
+                "Полное ФИО": st.column_config.TextColumn(required=True),
+                "Короткое ФИО": st.column_config.TextColumn(required=True),
+                "Должность": st.column_config.SelectboxColumn(options=POSITIONS_LIST, required=True),
+                "Разряд": st.column_config.TextColumn()
+            },
+            key="staff_editor"
+        )
+        
+        # Кнопка сохранения
+        if st.button("💾 Сохранить изменения в штате", type="primary"):
+            new_roster = []
+            for _, row in edited_df.iterrows():
+                # Пропускаем полностью пустые строки
+                if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
+                    new_roster.append({
+                        "full_name": str(row["Полное ФИО"]).strip(),
+                        "short_name": str(row["Короткое ФИО"]).strip() if pd.notna(row["Короткое ФИО"]) else make_short_name(str(row["Полное ФИО"])),
+                        "post": str(row["Должность"]).strip() if pd.notna(row["Должность"]) else "Изготовитель мясных п/ф",
+                        "grade": str(row["Разряд"]).strip() if pd.notna(row["Разряд"]) else "—"
+                    })
             
-        st.dataframe(df_staff, use_container_width=True)
+            st.session_state.staff_roster = new_roster
+            save_to_db()
+            st.success("✅ Штат успешно обновлен и сохранен в базу!")
+            st.rerun()
     else:
-        st.write("Штат пуст. Добавьте сотрудников.")
+        st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить стандартный список.")
+        if st.button("Загрузить сотрудников из шаблона"):
+            st.session_state.staff_roster = load_initial_staff()
+            save_to_db()
+            st.rerun()
