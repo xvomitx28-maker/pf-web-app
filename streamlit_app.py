@@ -21,11 +21,9 @@ st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
 
 custom_css = """
 <style>
-    /* Убираем только меню и футер */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Стилизация вкладок (Tabs) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 30px;
         background-color: transparent;
@@ -45,7 +43,6 @@ custom_css = """
         font-weight: 600;
     }
     
-    /* Стилизация главных кнопок (синие) */
     .stButton>button[kind="primary"] {
         background-color: #0055ff;
         color: white;
@@ -58,13 +55,11 @@ custom_css = """
         color: white;
     }
     
-    /* Стилизация второстепенных кнопок */
     .stButton>button {
         border-radius: 6px;
         border: 1px solid #d1d5db;
     }
     
-    /* Таблицы */
     [data-testid="stDataFrame"] {
         border-radius: 8px;
         border: 1px solid #e5e7eb;
@@ -112,7 +107,6 @@ DEFAULT_RATES = [
 
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
-# Заливки
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
 NO_FILL = PatternFill(fill_type=None) 
 
@@ -347,24 +341,36 @@ def generate_and_download():
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         
+        # 1. Ищем колонку "ИТОГО" в шаблоне ДО того, как ставить дни
+        current_itogo_col = None
+        for c_idx in range(4, 50):
+            for r_idx in [1, 2, 3]:
+                val = ws_gr.cell(row=r_idx, column=c_idx).value
+                if val and str(val).strip().upper() == "ИТОГО":
+                    current_itogo_col = c_idx
+                    break
+            if current_itogo_col: break
+        
+        # 2. Корректируем количество колонок, чтобы ИТОГО стояло ровно после последнего дня
+        target_itogo_col = 4 + num_days
+        
+        if current_itogo_col:
+            if current_itogo_col < target_itogo_col:
+                ws_gr.insert_cols(current_itogo_col, target_itogo_col - current_itogo_col)
+            elif current_itogo_col > target_itogo_col:
+                ws_gr.delete_cols(target_itogo_col, current_itogo_col - target_itogo_col)
+        
+        # Теперь колонка ИТОГО гарантированно находится на позиции target_itogo_col
+        itogo_col = target_itogo_col
+        
+        # 3. Ставим дни в шапку и очищаем лишние цвета
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
             for r_idx in [1, 2, 3]:
                 cell_header = ws_gr.cell(row=r_idx, column=3 + d)
                 cell_header.fill = NO_FILL
-            
-        itogo_col = None
-        for c_idx in range(4, 50):
-            for r_idx in [1, 2, 3]:
-                val = ws_gr.cell(row=r_idx, column=c_idx).value
-                if val and str(val).strip().upper() == "ИТОГО":
-                    itogo_col = c_idx
-                    break
-            if itogo_col: break
-            
-        if not itogo_col:
-            itogo_col = 4 + num_days
         
+        # Очищаем заливку в A, B, C
         block_r = 4
         for r in range(1, 50):
             for c in range(1, 4):
@@ -380,6 +386,7 @@ def generate_and_download():
             for c_idx in [1, 2, 3]:
                 ws_gr.cell(row=r_idx, column=c_idx).fill = NO_FILL
         
+        # 4. Заполняем сотрудников
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
@@ -568,7 +575,6 @@ with tab0:
     with c1: 
         new_month = st.selectbox("Месяц", MONTHS_RU, index=datetime.date.today().month - 1)
     with c2: 
-        # Выпадающий список для года
         years_list = [str(y) for y in range(2024, 2036)]
         current_year_str = str(datetime.date.today().year)
         default_index = years_list.index(current_year_str) if current_year_str in years_list else 0
