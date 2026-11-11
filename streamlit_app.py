@@ -172,19 +172,24 @@ def generate_and_download():
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
 
-        # 1.1 Ищем идеальный образец карточки (желательно "Вакансия")
-        tpl_pf_name = "Вакансия" if "Вакансия" in wb_pf.sheetnames else None
+        # 1.1 Ищем идеальный образец карточки (с формулами внизу)
+        tpl_pf_name = None
+        for s_name in wb_pf.sheetnames:
+            if s_name not in ("Итог", "рубкг") and "вакансия" not in s_name.lower():
+                # Проверяем, есть ли в строке 33 формула (SUM)
+                if isinstance(wb_pf[s_name].cell(row=33, column=2).value, str):
+                    if "SUM" in str(wb_pf[s_name].cell(row=33, column=2).value).upper():
+                        tpl_pf_name = s_name
+                        break
+        
+        # Если не нашли лист с формулами, берем Вакансию или первый попавшийся
         if not tpl_pf_name:
-            for s_name in wb_pf.sheetnames:
-                if s_name not in ("Итог", "рубкг"):
-                    tpl_pf_name = s_name
-                    break
+            tpl_pf_name = "Вакансия" if "Вакансия" in wb_pf.sheetnames else wb_pf.sheetnames[0]
 
-        # 1.2 Полностью удаляем старые карточки, НО ОСТАВЛЯЕМ наш образец (tpl_pf_name)
-        if tpl_pf_name:
-            for s_name in list(wb_pf.sheetnames):
-                if s_name not in ("Итог", "рубкг", tpl_pf_name):
-                    del wb_pf[s_name]
+        # 1.2 Удаляем ВСЕ старые карточки, КРОМЕ нашего образца
+        for s_name in list(wb_pf.sheetnames):
+            if s_name not in ("Итог", "рубкг", tpl_pf_name):
+                del wb_pf[s_name]
 
         # 1.3 Создаем новые карточки строго по реестру
         for emp in st.session_state.staff_roster:
@@ -195,15 +200,16 @@ def generate_and_download():
                 if tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
                     new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
                     new_ws.title = name
-                    # Очищаем от старых смен и ставим индивидуальную ставку
+                    # Чистим от старых смен и ставим индивидуальную ставку
                     for r in range(2, 33):
                         new_ws.cell(row=r, column=2).value = None # Смены
                         new_ws.cell(row=r, column=3).value = rate_val # Ставка (Колонка C)
-                        for c in [4, 5, 6, 7, 8, 9, 10, 11]: # Очищаем остальные колонки
+                        # Очищаем ручные вводы в остальных колонках, оставляя формулы
+                        for c in range(4, 15): 
                             if new_ws.cell(row=r, column=c).data_type != 'f':
                                 new_ws.cell(row=r, column=c).value = None
 
-        # 1.4 Если "Вакансия" (или другой образец) не входит в реестр, удаляем её
+        # 1.4 Если "Вакансия" (или образец) не входит в реестр, удаляем её
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
