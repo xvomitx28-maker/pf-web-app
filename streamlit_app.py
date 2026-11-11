@@ -103,7 +103,6 @@ def save_global_settings():
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
         
-        # Проверяем, есть ли уже глобальные настройки
         res = supabase.table("app_data").select("id").eq("id", "GLOBAL_SETTINGS").execute()
         if res.data:
             supabase.table("app_data").update(data).eq("id", "GLOBAL_SETTINGS").execute()
@@ -123,7 +122,6 @@ def load_global_settings():
             st.session_state.staff_roster = payload.get("staff_roster", [])
             st.session_state.rates = payload.get("rates", DEFAULT_RATES)
         else:
-            # Если база пустая, берем из шаблона и создаем
             st.session_state.staff_roster = load_initial_staff()
             st.session_state.rates = DEFAULT_RATES
             save_global_settings()
@@ -134,7 +132,6 @@ def load_global_settings():
 def save_month_to_db():
     if not supabase or not st.session_state.current_id: return
     try:
-        # В базе месяца храним ТОЛЬКО смены и тоннаж
         payload = {
             "shifts": st.session_state.shifts, 
             "tonnage": st.session_state.tonnage, 
@@ -239,13 +236,11 @@ def generate_and_download():
         old_count = last_emp_r - (block_r + 1)
         new_count = len(st.session_state.staff_roster)
         
-        # Удаляем/добавляем строки под нужное количество
         if old_count > new_count:
             ws_gr.delete_rows(block_r + 1 + new_count, old_count - new_count)
         elif new_count > old_count:
             ws_gr.insert_rows(block_r + 1 + old_count, new_count - old_count)
 
-        # Записываем актуальный глобальный штат
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
@@ -412,7 +407,6 @@ with tab0:
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
                     
-                    # Сохраняем только пустые смены для нового месяца
                     empty_payload = json.dumps({"shifts": {}, "tonnage": {}, "subordinates": []})
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
@@ -535,9 +529,18 @@ with tab3:
 # ================= TAB 4: КАДРЫ =================
 with tab4:
     st.subheader("Глобальный реестр сотрудников (Штат)")
-    st.info("Этот список един для всех месяцев. Изменения здесь сразу влияют на генерацию всех файлов.")
+    st.info("Этот список един для всех месяцев. Разряд можно выбрать из выпадающего списка (он берется из вкладки «Ставки»).")
     
     if st.session_state.staff_roster:
+        # Собираем все доступные разряды из справочника ставок для выпадающего списка
+        all_grades = set()
+        for r in st.session_state.rates:
+            if r.get("grade") and str(r["grade"]).strip():
+                all_grades.add(str(r["grade"]).strip())
+        
+        # Добавляем прочерк для должностей без разряда
+        grade_options = ["—"] + sorted(list(all_grades))
+        
         df_staff = pd.DataFrame(st.session_state.staff_roster)
         df_staff = df_staff.rename(columns={
             "full_name": "Полное ФИО", 
@@ -554,7 +557,8 @@ with tab4:
                 "Полное ФИО": st.column_config.TextColumn(required=True),
                 "Короткое ФИО": st.column_config.TextColumn(required=True),
                 "Должность": st.column_config.SelectboxColumn(options=POSITIONS_LIST, required=True),
-                "Разряд": st.column_config.TextColumn()
+                # Делаем разряд выпадающим списком!
+                "Разряд": st.column_config.SelectboxColumn(options=grade_options) 
             },
             key="staff_editor"
         )
@@ -572,7 +576,7 @@ with tab4:
             
             st.session_state.staff_roster = new_roster
             save_global_settings()
-            st.success("✅ Глобальный штат сохранен! Теперь он применяется ко всем месяцам.")
+            st.success("✅ Глобальный штат сохранен!")
             st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить стандартный список.")
