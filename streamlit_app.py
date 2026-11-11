@@ -54,9 +54,9 @@ DEFAULT_RATES = [
 
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
-# Оранжевая заливка для подработчиков в графике
+# Заливки
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
-NO_FILL = PatternFill(fill_type=None) # Пустая заливка (белая/прозрачная)
+NO_FILL = PatternFill(fill_type=None) # Пустая заливка (белая)
 
 # ==========================================
 # 4. ИНИЦИАЛИЗАЦИЯ СЕССИИ
@@ -276,7 +276,7 @@ def generate_and_download():
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
         # ---------------------------------------------------------
-        # 7.2. ГРАФИК (xlsx) - ОЧИЩАЕМ ЖЕЛТЫЙ ЦВЕТ
+        # 7.2. ГРАФИК (xlsx) - ОЧИЩАЕМ ВСЕ ЦВЕТА
         # ---------------------------------------------------------
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
@@ -289,13 +289,12 @@ def generate_and_download():
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         
-        # Ставим дни и принудительно убираем желтую заливку в шапке (строки 1, 2, 3)
+        # Ставим дни и убираем заливку в шапке (строки 1, 2, 3)
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
-            
             for r_idx in [1, 2, 3]:
                 cell_header = ws_gr.cell(row=r_idx, column=3 + d)
-                cell_header.fill = NO_FILL # Делаем прозрачным
+                cell_header.fill = NO_FILL
             
         # Ищем колонку ИТОГО (динамически)
         itogo_col = None
@@ -319,6 +318,12 @@ def generate_and_download():
             if block_r > 4: break
             
         last_day_col_letter = get_column_letter(3 + num_days)
+        last_emp_row = block_r + len(st.session_state.staff_roster)
+        
+        # Очищаем заливку в столбцах A, B, C для всей таблицы (от шапки до последнего сотрудника)
+        for r_idx in range(1, last_emp_row + 1):
+            for c_idx in [1, 2, 3]:
+                ws_gr.cell(row=r_idx, column=c_idx).fill = NO_FILL
         
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
@@ -326,7 +331,7 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            # ОЧИЩАЕМ ВЕСЬ ДИАПАЗОН ДНЕЙ ДЛЯ ЭТОГО СОТРУДНИКА
+            # ОЧИЩАЕМ ДИАПАЗОН ДНЕЙ
             for c_idx in range(4, 3 + num_days + 1):
                 cell_to_clear = ws_gr.cell(row=r, column=c_idx)
                 cell_to_clear.value = None
@@ -356,7 +361,6 @@ def generate_and_download():
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
             
-            # Считаем КОЛИЧЕСТВО смен (выходов)
             ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:{last_day_col_letter}{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
