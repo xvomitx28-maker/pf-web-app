@@ -15,37 +15,17 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 ДИЗАЙН В СТИЛЕ BITRIX24 (CSS)
+# 🎨 БЕЗОПАСНЫЙ ДИЗАЙН (CSS)
 # ==========================================
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
 
 custom_css = """
 <style>
-    /* Скрываем стандартный хедер и футер Streamlit */
+    /* Убираем только меню и футер */
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Основной фон приложения (светло-серый, как в рабочей области Б24) */
-    .stApp {
-        background-color: #f4f6f8;
-    }
-    
-    /* Контейнер контента */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 3rem;
-        max-width: 1400px;
-    }
-    
-    /* Боковая панель (белая с легкой тенью) */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e5e7eb;
-        box-shadow: 2px 0 5px rgba(0,0,0,0.02);
-    }
-    
-    /* Вкладки (стиль навигации Б24) */
+    /* Стилизация вкладок (Tabs) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 30px;
         background-color: transparent;
@@ -56,10 +36,8 @@ custom_css = """
         height: 50px;
         background-color: transparent;
         border: none;
-        color: #555555;
         font-weight: 500;
         font-size: 15px;
-        padding: 0 5px;
     }
     .stTabs [aria-selected="true"] {
         color: #0055ff !important;
@@ -67,69 +45,30 @@ custom_css = """
         font-weight: 600;
     }
     
-    /* Кнопки (общий стиль) */
-    .stButton>button {
-        border-radius: 6px;
-        font-weight: 500;
-        transition: all 0.2s ease;
-        border: 1px solid #d1d5db;
-        background-color: #ffffff;
-        color: #333333;
-    }
-    .stButton>button:hover {
-        border-color: #0055ff;
-        color: #0055ff;
-        background-color: #f8faff;
-    }
-    
-    /* Главные кнопки (синие, как "Создать" в Б24) */
+    /* Стилизация главных кнопок (синие) */
     .stButton>button[kind="primary"] {
         background-color: #0055ff;
         color: white;
         border: none;
+        border-radius: 6px;
         box-shadow: 0 2px 4px rgba(0, 85, 255, 0.2);
     }
     .stButton>button[kind="primary"]:hover {
         background-color: #0044cc;
-        box-shadow: 0 4px 8px rgba(0, 85, 255, 0.3);
         color: white;
     }
     
-    /* Поля ввода */
-    .stTextInput>div>div>input, 
-    .stNumberInput>div>div>input, 
-    .stDateInput>div>div>input,
-    .stSelectbox>div>div>div {
+    /* Стилизация второстепенных кнопок */
+    .stButton>button {
         border-radius: 6px;
         border: 1px solid #d1d5db;
-        background-color: #ffffff;
-    }
-    .stTextInput>div>div>input:focus, 
-    .stNumberInput>div>div>input:focus, 
-    .stDateInput>div>div>input:focus {
-        border-color: #0055ff;
-        box-shadow: 0 0 0 1px #0055ff;
     }
     
-    /* Таблицы (Data Editor) */
+    /* Таблицы */
     [data-testid="stDataFrame"] {
         border-radius: 8px;
         border: 1px solid #e5e7eb;
         background-color: #ffffff;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    
-    /* Заголовки */
-    h1, h2, h3 {
-        color: #1f2937;
-        font-weight: 600;
-    }
-    
-    /* Уведомления (Info, Success, Error) */
-    .stAlert {
-        border-radius: 8px;
-        border: none;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
 </style>
 """
@@ -626,8 +565,14 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 �
 with tab0:
     st.subheader("Новый месяц")
     c1, c2 = st.columns(2)
-    with c1: new_month = st.selectbox("Месяц", MONTHS_RU, index=datetime.date.today().month - 1)
-    with c2: new_year = st.number_input("Год", min_value=2024, max_value=2035, value=datetime.date.today().year)
+    with c1: 
+        new_month = st.selectbox("Месяц", MONTHS_RU, index=datetime.date.today().month - 1)
+    with c2: 
+        # Выпадающий список для года
+        years_list = [str(y) for y in range(2024, 2036)]
+        current_year_str = str(datetime.date.today().year)
+        default_index = years_list.index(current_year_str) if current_year_str in years_list else 0
+        new_year = st.selectbox("Год", years_list, index=default_index)
 
     if st.button("✨ Создать месяц", type="primary"):
         record_id = f"{new_month}_{new_year}"
