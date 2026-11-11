@@ -9,6 +9,7 @@ import base64
 import json
 import re
 from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 from supabase import create_client, Client
 
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
@@ -43,10 +44,15 @@ DEFAULT_RATES = [
 ]
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
+# Оранжевая заливка для подработчиков в графике
+ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
+
 # ---------- ИНИЦИАЛИЗАЦИЯ ----------
 _defaults = {
     "active_month": "", "active_year": "", "current_id": None,
-    "shifts": {}, "tonnage": {}, "subordinates": [], 
+    # Структура смен: {"5": {"timesheet": ["Иванов"], "graph_only": {"Петров": "Обвалка"}}}
+    "shifts": {}, 
+    "tonnage": {}, "subordinates": [], 
     "staff_roster": [], "rates": DEFAULT_RATES
 }
 for k, v in _defaults.items():
@@ -92,7 +98,7 @@ def load_initial_staff():
         })
     return res
 
-# ---------- ГЛОБАЛЬНЫЕ НАСТРОЙКИ (РЕЕСТР И СТАВКИ) ----------
+# ---------- ГЛОБАЛЬНЫЕ НАСТРОЙКИ ----------
 def save_global_settings():
     if not supabase: return
     try:
@@ -150,7 +156,19 @@ def load_month_from_db(record_id):
         if res.data and res.data[0]["pf_base64"]:
             raw_json = base64.b64decode(res.data[0]["pf_base64"]).decode('utf-8')
             payload = json.loads(raw_json)
-            st.session_state.shifts = payload.get("shifts", {})
+            
+            raw_shifts = payload.get("shifts", {})
+            st.session_state.shifts = {}
+            for k, v in raw_shifts.items():
+                if isinstance(v, list): # Старый формат
+                    st.session_state.shifts[k] = {"timesheet": v, "graph_only": {}}
+                else:
+                    # На случай, если в старом формате graph_only был списком
+                    go = v.get("graph_only", {})
+                    if isinstance(go, list):
+                        go = {name: "" for name in go}
+                    st.session_state.shifts[k] = {"timesheet": v.get("timesheet", []), "graph_only": go}
+
             st.session_state.tonnage = payload.get("tonnage", {})
             st.session_state.subordinates = payload.get("subordinates", [])
             
@@ -171,27 +189,22 @@ def generate_and_download():
         # ================= 1. ТАБЕЛЬ (xlsm) =================
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
+        wb_pf.calculation.calcMode = 'auto'
 
-        # 1.1 Ищем идеальный образец карточки (с формулами внизу)
         tpl_pf_name = None
         for s_name in wb_pf.sheetnames:
             if s_name not in ("Итог", "рубкг") and "вакансия" not in s_name.lower():
-                # Проверяем, есть ли в строке 33 формула (SUM)
                 if isinstance(wb_pf[s_name].cell(row=33, column=2).value, str):
                     if "SUM" in str(wb_pf[s_name].cell(row=33, column=2).value).upper():
                         tpl_pf_name = s_name
                         break
-        
-        # Если не нашли лист с формулами, берем Вакансию или первый попавшийся
         if not tpl_pf_name:
             tpl_pf_name = "Вакансия" if "Вакансия" in wb_pf.sheetnames else wb_pf.sheetnames[0]
 
-        # 1.2 Удаляем ВСЕ старые карточки, КРОМЕ нашего образца
         for s_name in list(wb_pf.sheetnames):
             if s_name not in ("Итог", "рубкг", tpl_pf_name):
                 del wb_pf[s_name]
 
-        # 1.3 Создаем новые карточки строго по реестру
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
@@ -200,52 +213,46 @@ def generate_and_download():
                 if tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
                     new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
                     new_ws.title = name
-                    # Чистим от старых смен и ставим индивидуальную ставку
                     for r in range(2, 33):
-                        new_ws.cell(row=r, column=2).value = None # Смены
-                        new_ws.cell(row=r, column=3).value = rate_val # Ставка (Колонка C)
-                        # Очищаем ручные вводы в остальных колонках, оставляя формулы
+                        new_ws.cell(row=r, column=2).value = None 
+                        new_ws.cell(row=r, column=3).value = rate_val 
                         for c in range(4, 15): 
                             if new_ws.cell(row=r, column=c).data_type != 'f':
                                 new_ws.cell(row=r, column=c).value = None
+                    new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
+                    new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
 
-        # 1.4 Если "Вакансия" (или образец) не входит в реестр, удаляем её
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
-        # 1.5 Ставим смены в созданные карточки
-        for day_str, emps in st.session_state.shifts.items():
+        for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
-            for emp_full_name in emps:
+            timesheet_emps = data.get("timesheet", [])
+            for emp_full_name in timesheet_emps:
                 if emp_full_name in wb_pf.sheetnames:
                     wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
             
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # 1.6 Пересобираем лист "Итог" с нуля
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
-            
-            # Очищаем всё от старых сотрудников
             for r in range(2, 50):
                 ws_it.cell(row=r, column=1).value = None
                 ws_it.cell(row=r, column=2).value = None
                 ws_it.cell(row=r, column=3).value = None
             
-            # Записываем сотрудников строго по реестру
             for i, emp in enumerate(st.session_state.staff_roster):
                 r = 2 + i
                 name = emp["full_name"]
                 ws_it.cell(row=r, column=1, value=name)
                 
-                shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if name in emps)
+                shifts_count = sum(1 for d, data in st.session_state.shifts.items() if name in data.get("timesheet", []))
                 rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
                 
                 ws_it.cell(row=r, column=2, value=shifts_count * rate_val)
                 ws_it.cell(row=r, column=3, value=shifts_count)
                 
-            # Пишем "ИТОГО:"
             itogo_r = 2 + len(st.session_state.staff_roster)
             ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
             ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
@@ -259,6 +266,7 @@ def generate_and_download():
         # ================= 2. ГРАФИК (xlsx) =================
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
+        wb_gr.calculation.calcMode = 'auto'
         ws_gr = wb_gr.active
         ws_gr['A1'] = m_name
         try: ws_gr.title = f"{m_name} {y_val}"
@@ -283,12 +291,25 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            for day_str, emps in st.session_state.shifts.items():
-                if emp["full_name"] in emps:
-                    day = int(day_str)
-                    col_idx = 3 + day
-                    hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
+            for day_str, data in st.session_state.shifts.items():
+                timesheet_emps = data.get("timesheet", [])
+                graph_only_dict = data.get("graph_only", {})
+                
+                day = int(day_str)
+                col_idx = 3 + day
+                hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
+                
+                # Обычная смена (Табель + График)
+                if emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
+                
+                # Подработка (Только График) - красим в оранжевый
+                elif emp["full_name"] in graph_only_dict:
+                    cell = ws_gr.cell(row=r, column=col_idx, value=hours)
+                    cell.fill = ORANGE_FILL
+            
+            # ИТОГО по сотруднику в графике
+            ws_gr.cell(row=r, column=36, value=f"=SUM(D{r}:AI{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
         ws_gr.delete_rows(start_delete_row, 100)
@@ -299,6 +320,7 @@ def generate_and_download():
         # ================= 3. ПОДРАБОТЧИКИ (xlsm) =================
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         wb_sub.calculation.fullCalcOnLoad = True
+        wb_sub.calculation.calcMode = 'auto'
         
         tpl_sub_name = None
         for s in wb_sub.sheetnames:
@@ -321,6 +343,8 @@ def generate_and_download():
                 for r in range(2, 33): 
                     new_ws.cell(row=r, column=2).value = None
                     new_ws.cell(row=r, column=3).value = None
+                new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
+                new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
             
             day = int(sub["date"].split(".")[0])
             wb_sub[title].cell(row=day + 1, column=2, value=1)
@@ -448,7 +472,7 @@ with tab0:
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
                     
-                    st.success("✅ Месяц создан! Штат берется из глобального реестра.")
+                    st.success("✅ Месяц создан!")
                     st.rerun()
             except Exception as e:
                 st.error(f"Ошибка: {e}")
@@ -458,7 +482,7 @@ with tab1:
     if not st.session_state.active_month:
         st.info("👈 Сначала создайте месяц.")
     else:
-        st.subheader("Отметка смен (Штат)")
+        st.subheader("Отметка смен")
         c1, c2 = st.columns(2)
         with c1: shift_date = st.date_input("Дата смены", datetime.date.today())
         with c2: tonnage = st.number_input("Тоннаж цеха (кг)", min_value=0.0, value=0.0, step=1.0)
@@ -466,32 +490,66 @@ with tab1:
         st.markdown("**Кого отметить?**")
         selected = {}
         for emp in st.session_state.staff_roster:
-            label = f"{emp['short_name']} — {emp['post']}"
-            if emp.get('grade') and emp['grade'] != "—":
-                label += f" ({emp['grade']})"
-            selected[emp["full_name"]] = st.checkbox(label, key=f"chk_{emp['full_name']}")
+            col_main, col_other, col_dept = st.columns([4, 3, 3])
+            
+            with col_main:
+                label = f"{emp['short_name']} — {emp['post']}"
+                if emp.get('grade') and emp['grade'] != "—":
+                    label += f" ({emp['grade']})"
+                is_main = st.checkbox(label, key=f"main_{emp['full_name']}")
+            
+            with col_other:
+                is_other = st.checkbox("Подработка (другой цех)", key=f"other_{emp['full_name']}")
+                
+            with col_dept:
+                dept_name = ""
+                if is_other:
+                    dept_name = st.text_input("Подразделение", key=f"dept_{emp['full_name']}", label_visibility="collapsed", placeholder="Введите цех...")
+            
+            selected[emp["full_name"]] = {"timesheet": is_main, "graph_only": is_other, "dept": dept_name}
 
         if st.button("💾 Провести смену", type="primary"):
             day_str = str(shift_date.day)
             if day_str not in st.session_state.shifts:
-                st.session_state.shifts[day_str] = []
+                st.session_state.shifts[day_str] = {"timesheet": [], "graph_only": {}}
             
-            for emp_full_name, checked in selected.items():
-                if checked and emp_full_name not in st.session_state.shifts[day_str]:
-                    st.session_state.shifts[day_str].append(emp_full_name)
+            # Если старый формат (список), конвертируем в словарь
+            if "graph_only" not in st.session_state.shifts[day_str]:
+                st.session_state.shifts[day_str]["graph_only"] = {}
+            if isinstance(st.session_state.shifts[day_str]["graph_only"], list):
+                st.session_state.shifts[day_str]["graph_only"] = {n: "" for n in st.session_state.shifts[day_str]["graph_only"]}
+            
+            for emp_full_name, checks in selected.items():
+                if checks["timesheet"] and emp_full_name not in st.session_state.shifts[day_str]["timesheet"]:
+                    st.session_state.shifts[day_str]["timesheet"].append(emp_full_name)
+                elif checks["graph_only"]:
+                    st.session_state.shifts[day_str]["graph_only"][emp_full_name] = checks["dept"]
             
             if tonnage > 0:
                 st.session_state.tonnage[day_str] = float(tonnage)
             
             save_month_to_db()
-            st.success(f"Смена на {shift_date.strftime('%d.%m.%Y')} сохранена в базу!")
+            st.success(f"Смена на {shift_date.strftime('%d.%m.%Y')} сохранена!")
             st.rerun()
 
         st.markdown("---")
         st.markdown("**Кто уже отмечен в этом месяце:**")
-        for day, emps in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
-            short_names = [next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == e), e) for e in emps]
-            st.write(f"**{day} число:** {', '.join(short_names)}")
+        for day, data in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
+            timesheet_names = [next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == e), e) for e in data.get("timesheet", [])]
+            
+            go_dict = data.get("graph_only", {})
+            graph_names = []
+            for name, dept in go_dict.items():
+                short_n = next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == name), name)
+                dept_str = f" (в {dept})" if dept else ""
+                graph_names.append(f"{short_n}{dept_str}")
+            
+            msg = f"**{day} число:** "
+            if timesheet_names:
+                msg += f"Основная: {', '.join(timesheet_names)}. "
+            if graph_names:
+                msg += f"Подработка (только график): {', '.join(graph_names)}."
+            st.write(msg)
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
 with tab2:
