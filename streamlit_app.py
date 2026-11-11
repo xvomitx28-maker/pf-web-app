@@ -46,7 +46,6 @@ MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Ма
 _defaults = {
     "rates": DEFAULT_RATES,
     "active_month": "", "active_year": "", "current_id": None,
-    # Данные вместо файлов
     "shifts": {},       # {"5": ["Иванов", "Петров"]}
     "tonnage": {},      # {"5": 150.5}
     "subordinates": [], # [{"fio": "...", "post": "...", "grade": "...", "date": "05.11", "amount": 4500}]
@@ -66,14 +65,12 @@ def get_positions(): return sorted(set(r["post"] for r in st.session_state.rates
 def get_grades(post): return [r["grade"] for r in st.session_state.rates if r["post"] == post]
 
 def read_staff_from_template():
-    """Читает ФИО и должности из чистого шаблона. Вызывается 1 раз."""
     if not os.path.exists(TPL_PF): return []
     wb = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
     res = []
     for sname in wb.sheetnames:
         if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]") or "вакансия" in sname.lower():
             continue
-        # Пытаемся угадать должность по фамилии (как было в старом коде)
         low = sname.lower()
         if "рузиева" in low and "шазие" in low: post = "Весовщик"
         elif "насруддинов" in low or ("рузиев" in low and "ислом" in low): post = "Грузчик"
@@ -116,14 +113,14 @@ def load_from_db(record_id):
 # ---------- ГЕНЕРАЦИЯ И СКАЧИВАНИЕ ----------
 def generate_and_download():
     if not all(os.path.exists(f) for f in [TPL_PF, TPL_SUB, TPL_GRAPH, TPL_SH]):
-        st.error("Шаблоны не найдены на GitHub!")
+        st.error("Шаблоны не найдены на GitHub! Загрузите оригинальные файлы.")
         return None
 
     zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        m_name = st.session_state.active_month
-        y_val = st.session_state.active_year
+    m_name = st.session_state.active_month
+    y_val = st.session_state.active_year
 
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # 1. ТАБЕЛЬ (xlsm)
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         for day_str, emps in st.session_state.shifts.items():
@@ -144,14 +141,11 @@ def generate_and_download():
         try: ws_gr.title = f"{m_name} {y_val}"
         except: pass
         
-        # Ищем колонки дней
-        day_cols = {}
-        for c in range(4, 36):
-            for r in [2, 3]:
-                val = ws_gr.cell(row=r, column=c).value
-                if val is not None and str(val).strip().isdigit():
-                    day_cols[int(str(val).strip())] = c
-                    break
+        # Жестко прописываем даты (1..31) в строку 2, начиная с 4-й колонки (D)
+        m_idx = MONTHS_RU.index(m_name) + 1
+        num_days = calendar.monthrange(int(y_val), m_idx)[1]
+        for d in range(1, num_days + 1):
+            ws_gr.cell(row=2, column=3 + d, value=d)
         
         # Ищем строки сотрудников
         block_r = 4
@@ -159,25 +153,26 @@ def generate_and_download():
             if "полуфабрикат" in str(ws_gr.cell(row=r, column=1).value or "").lower():
                 block_r = r; break
         
+        # Ставим смены
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
-            if day in day_cols:
-                col_idx = day_cols[day]
-                for emp_sheet in emps:
-                    surname = emp_sheet.split()[0].lower()
-                    for r in range(block_r + 1, block_r + 40):
-                        graph_fio = str(ws_gr.cell(row=r, column=2).value or "").lower()
-                        if surname in graph_fio:
-                            hours = 8 if "весовщик" in emp_sheet.lower() or "грузчик" in emp_sheet.lower() else 11
-                            ws_gr.cell(row=r, column=col_idx, value=hours)
-                            break
+            col_idx = 3 + day
+            for emp_sheet in emps:
+                surname = emp_sheet.split()[0].lower()
+                for r in range(block_r + 1, block_r + 40):
+                    graph_fio = str(ws_gr.cell(row=r, column=2).value or "").lower()
+                    if surname in graph_fio:
+                        hours = 8 if "весовщик" in emp_sheet.lower() or "грузчик" in emp_sheet.lower() else 11
+                        ws_gr.cell(row=r, column=col_idx, value=hours)
+                        break
         
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # 3. ПОДРАБОТЧИКИ (xlsm) - создаем копии листов
+        # 3. ПОДРАБОТЧИКИ (xlsm) - создаем листы и обновляем Итог
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         tpl_sub = wb_sub[wb_sub.sheetnames[0] if wb_sub.sheetnames[0] != 'Итог' else wb_sub.sheetnames[1]]
+        
         for sub in st.session_state.subordinates:
             title = sub["fio"][:31]
             if title not in wb_sub.sheetnames:
@@ -186,6 +181,23 @@ def generate_and_download():
             day = int(sub["date"].split(".")[0])
             wb_sub[title].cell(row=day + 1, column=2, value=1)
             wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"])
+        
+        # Обновляем лист "Итог" в подработчиках
+        if "Итог" in wb_sub.sheetnames:
+            ws_it = wb_sub["Итог"]
+            for r in range(2, 100): # Очищаем старые данные
+                ws_it.cell(row=r, column=1).value = None
+                ws_it.cell(row=r, column=2).value = None
+                ws_it.cell(row=r, column=3).value = None
+            
+            for i, sub in enumerate(st.session_state.subordinates):
+                r = 2 + i
+                title = sub["fio"][:31]
+                ws_it.cell(row=r, column=1, value=title)
+                # Пишем формулы (J33 - сумма, B33 - смены. Если в вашем шаблоне другие ячейки, поменяйте тут)
+                ws_it.cell(row=r, column=2, value=f"='{title}'!J33")
+                ws_it.cell(row=r, column=3, value=f"='{title}'!B33")
+                
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
@@ -212,8 +224,6 @@ def generate_and_download():
 st.sidebar.header("🗓️ Текущий период")
 if st.session_state.active_month:
     st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
-    
-    # Кнопка скачивания (генерирует файлы на лету)
     if st.sidebar.button("⬇️ Сгенерировать и скачать файлы (ZIP)", type="primary"):
         zip_data = generate_and_download()
         if zip_data:
