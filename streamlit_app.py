@@ -275,7 +275,7 @@ def generate_and_download():
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
         # ---------------------------------------------------------
-        # 7.2. ГРАФИК (xlsx) - ИСПРАВЛЕННЫЙ БЛОК
+        # 7.2. ГРАФИК (xlsx) - БЕЗ ЖЕЛТЫХ КОЛОНОК
         # ---------------------------------------------------------
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
@@ -321,14 +321,14 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            # ОЧИЩАЕМ ВЕСЬ ДИАПАЗОН ДНЕЙ ДЛЯ ЭТОГО СОТРУДНИКА ОТ СТАРЫХ ДАННЫХ
+            # ОЧИЩАЕМ ВЕСЬ ДИАПАЗОН ДНЕЙ ДЛЯ ЭТОГО СОТРУДНИКА
             for c_idx in range(4, 3 + num_days + 1):
                 cell_to_clear = ws_gr.cell(row=r, column=c_idx)
                 cell_to_clear.value = None
-                cell_to_clear.fill = PatternFill(fill_type=None) # Снимаем заливку, если была
-                cell_to_clear.comment = None # Удаляем старые комментарии
+                cell_to_clear.fill = PatternFill(fill_type=None) # Делаем ячейку прозрачной/белой
+                cell_to_clear.comment = None
 
-            # ТЕПЕРЬ СТАВИМ НОВЫЕ СМЕНЫ
+            # СТАВИМ НОВЫЕ СМЕНЫ
             for day_str, data in st.session_state.shifts.items():
                 timesheet_emps = data.get("timesheet", [])
                 graph_only_dict = data.get("graph_only", {})
@@ -340,7 +340,7 @@ def generate_and_download():
                 if emp["full_name"] in graph_only_dict:
                     dept_name = graph_only_dict[emp["full_name"]]
                     cell = ws_gr.cell(row=r, column=col_idx, value=hours)
-                    cell.fill = ORANGE_FILL
+                    cell.fill = ORANGE_FILL # Оранжевый только для подработки
                     
                     if dept_name:
                         comment_text = f"Подработка: {dept_name}"
@@ -351,7 +351,7 @@ def generate_and_download():
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
             
-            # Считаем КОЛИЧЕСТВО смен (выходов) строго с первого по последний день
+            # Считаем КОЛИЧЕСТВО смен (выходов)
             ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:{last_day_col_letter}{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
@@ -464,14 +464,15 @@ if "initialized" not in st.session_state:
 st.sidebar.header("🗓️ Текущий период")
 if st.session_state.active_month:
     st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
-    if st.sidebar.button("⬇️ Сгенерировать и скачать файлы (ZIP)", type="primary"):
+    if st.sidebar.button("⬇️ Сгенерировать и скачать файлы (ZIP)", type="primary", use_container_width=True):
         zip_data = generate_and_download()
         if zip_data:
             st.sidebar.download_button(
                 label="💾 Сохранить на компьютер", 
                 data=zip_data, 
                 file_name=f"Итоги_{st.session_state.active_month}_{st.session_state.active_year}.zip", 
-                mime="application/zip"
+                mime="application/zip",
+                use_container_width=True
             )
 else:
     st.sidebar.warning("### Месяц не выбран\nСоздайте новый или выберите старый.")
@@ -485,7 +486,7 @@ if supabase:
         if saved:
             saved.sort(reverse=True)
             sel = st.sidebar.selectbox("Выберите месяц", saved)
-            if st.sidebar.button("Загрузить"):
+            if st.sidebar.button("Загрузить", use_container_width=True):
                 if load_month_from_db(sel):
                     st.sidebar.success("Загружено!")
                     st.rerun()
