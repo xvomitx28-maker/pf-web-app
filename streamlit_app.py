@@ -190,55 +190,55 @@ def generate_and_download():
         wb_pf.calculation.fullCalcOnLoad = True
         wb_pf.calculation.calcMode = 'auto'
 
+        # Берем один любой лист-образец
         tpl_pf_name = None
         for s_name in wb_pf.sheetnames:
-            if s_name not in ("Итог", "рубкг") and "вакансия" not in s_name.lower():
-                if isinstance(wb_pf[s_name].cell(row=33, column=2).value, str):
-                    if "SUM" in str(wb_pf[s_name].cell(row=33, column=2).value).upper():
-                        tpl_pf_name = s_name
-                        break
-        if not tpl_pf_name:
-            tpl_pf_name = "Вакансия" if "Вакансия" in wb_pf.sheetnames else wb_pf.sheetnames[0]
+            if s_name not in ("Итог", "рубкг"):
+                tpl_pf_name = s_name
+                break
+        
+        if not tpl_pf_name: return None
 
+        # Удаляем старые карточки (кроме Итог, рубкг и образца)
         for s_name in list(wb_pf.sheetnames):
             if s_name not in ("Итог", "рубкг", tpl_pf_name):
                 del wb_pf[s_name]
 
+        # Создаем карточки
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+            sheet_name = name[:31] # Обрезаем до 31 символа (ограничение Excel)
             
-            if name not in wb_pf.sheetnames:
-                if tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
+            if sheet_name not in wb_pf.sheetnames:
+                if tpl_pf_name in wb_pf.sheetnames:
                     new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
-                    new_ws.title = name
+                    new_ws.title = sheet_name
                     for r in range(2, 33):
-                        new_ws.cell(row=r, column=2).value = None 
-                        new_ws.cell(row=r, column=3).value = rate_val 
-                        for c in range(4, 15): 
-                            if new_ws.cell(row=r, column=c).data_type != 'f':
-                                new_ws.cell(row=r, column=c).value = None
-                    
-                    # Возвращаем формулы внизу карточки
-                    new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
-                    new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
+                        # Чистим только выходы и ставим ставку. Формулы в H и J НЕ ТРОГАЕМ.
+                        cell_b = new_ws.cell(row=r, column=2)
+                        if cell_b.data_type != 'f': cell_b.value = None 
+                        
+                        cell_c = new_ws.cell(row=r, column=3)
+                        if cell_c.data_type != 'f': cell_c.value = rate_val 
 
-        if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
+        # Удаляем сам образец, если его нет в реестре
+        if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
-        # Ставим смены (только выходы)
+        # Ставим смены (1 в колонку Выход)
         for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
             timesheet_emps = data.get("timesheet", [])
             for emp_full_name in timesheet_emps:
-                if emp_full_name in wb_pf.sheetnames:
-                    # Пишем 1 только в колонку B. Колонки H и J оставляем с формулами шаблона.
-                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
+                sheet_name = emp_full_name[:31]
+                if sheet_name in wb_pf.sheetnames:
+                    wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
             
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Лист "Итог" с формулами
+        # Лист "Итог" с формулами-ссылками
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -249,11 +249,12 @@ def generate_and_download():
             for i, emp in enumerate(st.session_state.staff_roster):
                 r = 2 + i
                 name = emp["full_name"]
+                sheet_name = name[:31]
                 ws_it.cell(row=r, column=1, value=name)
                 
-                # Формулы, которые тянут данные из карточки сотрудника
-                ws_it.cell(row=r, column=2, value=f"='{name}'!J33")
-                ws_it.cell(row=r, column=3, value=f"='{name}'!B33")
+                # Ссылки на формулы из карточки сотрудника (J33 - деньги, B33 - смены)
+                ws_it.cell(row=r, column=2, value=f"='{sheet_name}'!J33")
+                ws_it.cell(row=r, column=3, value=f"='{sheet_name}'!B33")
                 
             itogo_r = 2 + len(st.session_state.staff_roster)
             ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
@@ -315,8 +316,8 @@ def generate_and_download():
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
             
-            # Формула Итого (Колонка 36)
-            ws_gr.cell(row=r, column=36, value=f"=SUM(D{r}:AI{r})")
+            # Считаем КОЛИЧЕСТВО смен (выходов), а не сумму часов
+            ws_gr.cell(row=r, column=36, value=f"=COUNT(D{r}:AI{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
         ws_gr.delete_rows(start_delete_row, 100)
@@ -343,33 +344,25 @@ def generate_and_download():
                 
         subs_by_fio = {}
         for sub in st.session_state.subordinates:
-            title = sub["short_name"][:31]
-            if title not in wb_sub.sheetnames:
+            sheet_name = sub["short_name"][:31]
+            if sheet_name not in wb_sub.sheetnames:
                 new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sub_name])
-                new_ws.title = title
+                new_ws.title = sheet_name
                 for r in range(2, 33): 
-                    new_ws.cell(row=r, column=2).value = None
-                    new_ws.cell(row=r, column=3).value = None
-                    new_ws.cell(row=r, column=8).value = None
-                    new_ws.cell(row=r, column=10).value = None
-                
-                # Формулы внизу карточки подработчика
-                new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
-                new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
+                    cell_b = new_ws.cell(row=r, column=2)
+                    if cell_b.data_type != 'f': cell_b.value = None
+                    cell_c = new_ws.cell(row=r, column=3)
+                    if cell_c.data_type != 'f': cell_c.value = None
             
             day = int(sub["date"].split(".")[0])
             
-            wb_sub[title].cell(row=day + 1, column=2, value=1) # Смена
-            wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"]) # Ставка
+            wb_sub[sheet_name].cell(row=day + 1, column=2, value=1)
+            wb_sub[sheet_name].cell(row=day + 1, column=3, value=sub["amount"])
             
-            # Формулы для Итого и Суммы к выплате
-            wb_sub[title].cell(row=day + 1, column=8, value=f"=IF(B{day+1}=1, C{day+1}, 0)")
-            wb_sub[title].cell(row=day + 1, column=10, value=f"=H{day+1}")
-            
-            if title not in subs_by_fio:
-                subs_by_fio[title] = {"amount": 0.0, "shifts": 0}
-            subs_by_fio[title]["amount"] += float(sub["amount"])
-            subs_by_fio[title]["shifts"] += 1
+            if sheet_name not in subs_by_fio:
+                subs_by_fio[sheet_name] = {"amount": 0.0, "shifts": 0}
+            subs_by_fio[sheet_name]["amount"] += float(sub["amount"])
+            subs_by_fio[sheet_name]["shifts"] += 1
             
         if tpl_sub_name in wb_sub.sheetnames:
             del wb_sub[tpl_sub_name]
@@ -389,7 +382,6 @@ def generate_and_download():
                 r = 2 + i
                 if r < itogo_row:
                     ws_it.cell(row=r, column=1, value=fio)
-                    # Ссылки на карточки подработчиков
                     ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
                     ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
 
