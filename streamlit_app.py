@@ -128,7 +128,7 @@ def load_global_settings():
     except Exception as e:
         st.error(f"Ошибка загрузки глобальных настроек: {e}")
 
-# ---------- СОХРАНЕНИЕ МЕСЯЦА (ТОЛЬКО СМЕНЫ) ----------
+# ---------- СОХРАНЕНИЕ МЕСЯЦА ----------
 def save_month_to_db():
     if not supabase or not st.session_state.current_id: return
     try:
@@ -168,47 +168,76 @@ def generate_and_download():
     y_val = st.session_state.active_year
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. ТАБЕЛЬ (xlsm)
+        # ================= 1. ТАБЕЛЬ (xlsm) =================
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
 
+        # Находим лист-шаблон для копирования (первый не Итог и не рубкг)
+        tpl_pf_name = None
+        for s_name in wb_pf.sheetnames:
+            if s_name not in ("Итог", "рубкг"):
+                tpl_pf_name = s_name
+                break
+
+        # 1.1 Удаляем листы, которых нет в реестре
+        for s_name in list(wb_pf.sheetnames):
+            if s_name not in ("Итог", "рубкг"):
+                if not any(emp["full_name"] == s_name for emp in st.session_state.staff_roster):
+                    del wb_pf[s_name]
+
+        # 1.2 Создаем недостающие листы и ставим ставки
+        for emp in st.session_state.staff_roster:
+            name = emp["full_name"]
+            rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+            
+            if name not in wb_pf.sheetnames and tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
+                new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
+                new_ws.title = name
+                for r in range(2, 33):
+                    new_ws.cell(row=r, column=2).value = None
+                    new_ws.cell(row=r, column=3).value = rate_val
+
+        # 1.3 Ставим смены
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_full_name in emps:
-                surname = clean_name(emp_full_name.split()[0])
-                target_sheet = None
-                for s_name in wb_pf.sheetnames:
-                    if clean_name(s_name.split()[0]) == surname:
-                        target_sheet = s_name
-                        break
-                if target_sheet:
-                    wb_pf[target_sheet].cell(row=day + 1, column=2, value=1)
+                if emp_full_name in wb_pf.sheetnames:
+                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
             
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
+        # 1.4 Пересобираем лист "Итог" строго по реестру
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
+            # Очищаем старые данные
             for r in range(2, 50):
-                fio_cell = ws_it.cell(row=r, column=1).value
-                if fio_cell and str(fio_cell).strip().lower() not in ("итого:", "", "none"):
-                    sheet_name = str(fio_cell).strip()
-                    if sheet_name in wb_pf.sheetnames:
-                        shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
-                        emp_info = next((s for s in st.session_state.staff_roster if s["full_name"] == sheet_name), None)
-                        rate_val = 4500
-                        if emp_info:
-                            rate_val = get_rate_for(emp_info["post"], emp_info.get("grade", ""))
-                        ws_it.cell(row=r, column=2, value=shifts_count * rate_val) 
-                        ws_it.cell(row=r, column=3, value=shifts_count)
-                elif fio_cell and str(fio_cell).strip().lower() == "итого:":
-                    ws_it.cell(row=r, column=2, value=f"=SUM(B2:B{r-1})")
-                    ws_it.cell(row=r, column=3, value=f"=SUM(C2:C{r-1})")
+                ws_it.cell(row=r, column=1).value = None
+                ws_it.cell(row=r, column=2).value = None
+                ws_it.cell(row=r, column=3).value = None
+            
+            # Записываем новый список
+            for i, emp in enumerate(st.session_state.staff_roster):
+                r = 2 + i
+                name = emp["full_name"]
+                ws_it.cell(row=r, column=1, value=name)
+                
+                shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if name in emps)
+                rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                
+                ws_it.cell(row=r, column=2, value=shifts_count * rate_val)
+                ws_it.cell(row=r, column=3, value=shifts_count)
+                
+            # Пишем "ИТОГО:" в конец
+            itogo_r = 2 + len(st.session_state.staff_roster)
+            ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
+            ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
+            ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
 
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # 2. ГРАФИК (xlsx) - СТРОГО ПО РЕЕСТРУ
+        # ================= 2. ГРАФИК (xlsx) =================
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -221,6 +250,7 @@ def generate_and_download():
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
         
+        # Ищем начало блока
         block_r = 4
         for r in range(1, 50):
             for c in range(1, 4):
@@ -229,18 +259,7 @@ def generate_and_download():
                     break
             if block_r > 4: break
             
-        last_emp_r = block_r + 1
-        while last_emp_r < 100 and ws_gr.cell(row=last_emp_r, column=2).value is not None:
-            last_emp_r += 1
-            
-        old_count = last_emp_r - (block_r + 1)
-        new_count = len(st.session_state.staff_roster)
-        
-        if old_count > new_count:
-            ws_gr.delete_rows(block_r + 1 + new_count, old_count - new_count)
-        elif new_count > old_count:
-            ws_gr.insert_rows(block_r + 1 + old_count, new_count - old_count)
-
+        # Записываем строго по реестру
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
@@ -254,32 +273,34 @@ def generate_and_download():
                     hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
                     ws_gr.cell(row=r, column=col_idx, value=hours)
         
+        # ОЧИСТКА: Удаляем все строки ниже реестра (чтобы убрать пустые желтые квадраты)
+        start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
+        ws_gr.delete_rows(start_delete_row, 50) # Удаляем 50 строк вниз
+        
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # 3. ПОДРАБОТЧИКИ (xlsm)
+        # ================= 3. ПОДРАБОТЧИКИ (xlsm) =================
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         wb_sub.calculation.fullCalcOnLoad = True
         
-        tpl_sheet_name = None
+        tpl_sub_name = None
         for s in wb_sub.sheetnames:
             if s != "Итог":
-                tpl_sheet_name = s
+                tpl_sub_name = s
                 break
                 
-        if not tpl_sheet_name:
-            st.error("В файле tpl_sub.xlsm нет листа-шаблона!")
-            return None
+        if not tpl_sub_name: return None
             
         for s in list(wb_sub.sheetnames):
-            if s not in ("Итог", tpl_sheet_name):
+            if s not in ("Итог", tpl_sub_name):
                 del wb_sub[s]
                 
         subs_by_fio = {}
         for sub in st.session_state.subordinates:
             title = sub["short_name"][:31]
             if title not in wb_sub.sheetnames:
-                new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sheet_name])
+                new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sub_name])
                 new_ws.title = title
                 for r in range(2, 33): 
                     new_ws.cell(row=r, column=2).value = None
@@ -294,8 +315,8 @@ def generate_and_download():
             subs_by_fio[title]["amount"] += float(sub["amount"])
             subs_by_fio[title]["shifts"] += 1
             
-        if tpl_sheet_name in wb_sub.sheetnames:
-            del wb_sub[tpl_sheet_name]
+        if tpl_sub_name in wb_sub.sheetnames:
+            del wb_sub[tpl_sub_name]
         
         if "Итог" in wb_sub.sheetnames:
             ws_it = wb_sub["Итог"]
@@ -322,7 +343,7 @@ def generate_and_download():
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
-        # 4. ШАШИНА (xlsx)
+        # ================= 4. ШАШИНА (xlsx) =================
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
@@ -532,13 +553,11 @@ with tab4:
     st.info("Этот список един для всех месяцев. Разряд можно выбрать из выпадающего списка (он берется из вкладки «Ставки»).")
     
     if st.session_state.staff_roster:
-        # Собираем все доступные разряды из справочника ставок для выпадающего списка
         all_grades = set()
         for r in st.session_state.rates:
             if r.get("grade") and str(r["grade"]).strip():
                 all_grades.add(str(r["grade"]).strip())
-        
-        # Добавляем прочерк для должностей без разряда
+                
         grade_options = ["—"] + sorted(list(all_grades))
         
         df_staff = pd.DataFrame(st.session_state.staff_roster)
@@ -557,8 +576,7 @@ with tab4:
                 "Полное ФИО": st.column_config.TextColumn(required=True),
                 "Короткое ФИО": st.column_config.TextColumn(required=True),
                 "Должность": st.column_config.SelectboxColumn(options=POSITIONS_LIST, required=True),
-                # Делаем разряд выпадающим списком!
-                "Разряд": st.column_config.SelectboxColumn(options=grade_options) 
+                "Разряд": st.column_config.SelectboxColumn(options=grade_options)
             },
             key="staff_editor"
         )
@@ -576,7 +594,7 @@ with tab4:
             
             st.session_state.staff_roster = new_roster
             save_global_settings()
-            st.success("✅ Глобальный штат сохранен!")
+            st.success("✅ Глобальный штат сохранен! Теперь он применяется ко всем месяцам.")
             st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить стандартный список.")
