@@ -205,25 +205,30 @@ with tab0:
                 try:
                     existing = supabase.table("app_data").select("id").eq("id", record_id).execute()
                     if existing.data:
-                        st.error(f"❌ Месяц {record_id} уже существует! Выберите его в боковой панели.")
+                        st.error(f"❌ Месяц {record_id} уже существует! Удалите его из базы Supabase и попробуйте снова.")
                     else:
                         m_idx = MONTHS_RU.index(new_month) + 1
                         num_days = calendar.monthrange(new_year, m_idx)[1]
                         
+                        # --- ИСПРАВЛЕНИЕ 1: Не стираем формулы в табеле ---
                         wb_pf = load_wb(open(TPL_PF, "rb").read())
                         if "рубкг" in wb_pf.sheetnames:
                             ws_rub = wb_pf["рубкг"]
                             for day_i in range(1, 32):
                                 r = 1 + day_i
                                 ws_rub.cell(row=r, column=1).value = datetime.datetime(new_year, m_idx, day_i) if day_i <= num_days else None
-                                ws_rub.cell(row=r, column=6).value = None
-                                ws_rub.cell(row=r, column=8).value = None
-                                ws_rub.cell(row=r, column=9).value = None
+                                for c in [6, 8, 9]:
+                                    cell = ws_rub.cell(row=r, column=c)
+                                    if cell.data_type != 'f': cell.value = None
                         for sname in wb_pf.sheetnames:
                             if sname not in ["Итог", "рубкг"] and not sname.startswith("[Уволен]"):
                                 ws_e = wb_pf[sname]
                                 for r in range(2, 33):
-                                    for c in range(2, 8): ws_e.cell(row=r, column=c).value = None
+                                    # Очищаем только столбцы выходов и доп. полей (2, 4, 5, 6, 7). Столбец 3 (ставку) не трогаем.
+                                    for c in [2, 4, 5, 6, 7]: 
+                                        cell = ws_e.cell(row=r, column=c)
+                                        if cell.data_type != 'f': # Если это не формула
+                                            cell.value = None
                         st.session_state.pf_bytes = wb_to_bytes(wb_pf)
                         st.session_state.pf_name = f"Полуфабрикаты_{new_month}_{new_year}.xlsm"
 
@@ -232,11 +237,13 @@ with tab0:
                             if sname != "Итог":
                                 ws_s = wb_sub[sname]
                                 for r in range(2, 33):
-                                    ws_s.cell(row=r, column=2).value = None
-                                    ws_s.cell(row=r, column=3).value = None
+                                    for c in [2, 3]:
+                                        cell = ws_s.cell(row=r, column=c)
+                                        if cell.data_type != 'f': cell.value = None
                         st.session_state.sub_bytes = wb_to_bytes(wb_sub)
                         st.session_state.sub_name = f"Подработчики_{new_month}_{new_year}.xlsm"
 
+                        # --- ИСПРАВЛЕНИЕ 2: Не стираем формулы в графике ---
                         wb_graph = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
                         ws_gr = wb_graph.active
                         try: ws_gr.title = f"{new_month} {new_year}"
@@ -253,7 +260,7 @@ with tab0:
                             if "отделение" in fio_v and "полуфабрикат" not in fio_v: break
                             for c in range(4, 35):
                                 cell_d = ws_gr.cell(row=r, column=c)
-                                if cell_d.value is not None and not str(cell_d.value).startswith('='):
+                                if cell_d.data_type != 'f' and not str(cell_d.value or '').startswith('='):
                                     cell_d.value = None
                         buf_graph = io.BytesIO(); wb_graph.save(buf_graph)
                         st.session_state.graph_bytes = buf_graph.getvalue()
@@ -265,7 +272,8 @@ with tab0:
                             for r in range(4, min(150, ws_s.max_row + 1)):
                                 for c in range(2, 11):
                                     cell = ws_s.cell(row=r, column=c)
-                                    if cell.value is not None and not str(cell.value).startswith('='): cell.value = None
+                                    if cell.data_type != 'f' and not str(cell.value or '').startswith('='): 
+                                        cell.value = None
                         buf_sh = io.BytesIO(); wb_sh.save(buf_sh)
                         st.session_state.sh_bytes = buf_sh.getvalue()
                         st.session_state.sh_name = f"Шашина_{new_month}_{new_year}.xlsx"
@@ -274,7 +282,6 @@ with tab0:
                         st.session_state.active_year = str(new_year)
                         st.session_state.current_record_id = record_id
                         
-                        # Сохраняем в БД
                         data = {
                             "id": record_id,
                             "pf_base64": base64.b64encode(st.session_state.pf_bytes).decode("utf-8"),
@@ -284,7 +291,7 @@ with tab0:
                         }
                         supabase.table("app_data").insert(data).execute()
                         
-                        st.success(f"✅ Месяц {new_month} {new_year} создан и сохранен в базу!")
+                        st.success(f"✅ Месяц {new_month} {new_year} создан (формулы сохранены) и записан в базу!")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Ошибка: {e}")
@@ -323,10 +330,15 @@ with tab1:
                 
             if wb_graph:
                 ws_gr = wb_graph.active
+                # --- ИСПРАВЛЕНИЕ 3: Ищем дни в строках 2, 3 и 1 (в вашем шаблоне они во 2-й строке) ---
                 day_col = None
-                for c_idx in range(4, 36):
-                    val = ws_gr.cell(row=3, column=c_idx).value
-                    if str(val).strip() == str(day): day_col = c_idx; break
+                for r_check in [2, 3, 1]:
+                    for c_idx in range(4, 36):
+                        val = ws_gr.cell(row=r_check, column=c_idx).value
+                        if val is not None and str(val).strip() == str(day): 
+                            day_col = c_idx
+                            break
+                    if day_col: break
                 
                 if day_col:
                     block_r = 4
@@ -347,7 +359,7 @@ with tab1:
 
             st.session_state.pf_bytes = wb_to_bytes(wb_pf)
             save_to_db()
-            st.success(f"Отмечено {n} смен на {shift_date.strftime('%d.%m.%Y')} (Сохранено в базу).")
+            st.success(f"Отмечено {n} смен на {shift_date.strftime('%d.%m.%Y')} в Табеле и Графике (Сохранено в базу).")
             st.rerun()
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
