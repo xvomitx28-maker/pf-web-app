@@ -77,7 +77,7 @@ def load_initial_staff():
     wb = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
     res = []
     for sname in wb.sheetnames:
-        if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]") or "вакансия" in sname.lower():
+        if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]"):
             continue
         low = sname.lower()
         if "рузиева" in low: post = "Весовщик"
@@ -172,32 +172,36 @@ def generate_and_download():
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
 
-        # Находим лист-шаблон для копирования (первый не Итог и не рубкг)
-        tpl_pf_name = None
-        for s_name in wb_pf.sheetnames:
-            if s_name not in ("Итог", "рубкг"):
-                tpl_pf_name = s_name
-                break
+        # 1.1 Ищем идеальный образец карточки (желательно "Вакансия")
+        tpl_pf_name = "Вакансия" if "Вакансия" in wb_pf.sheetnames else None
+        if not tpl_pf_name:
+            for s_name in wb_pf.sheetnames:
+                if s_name not in ("Итог", "рубкг"):
+                    tpl_pf_name = s_name
+                    break
 
-        # 1.1 Удаляем листы, которых нет в реестре
+        # 1.2 Полностью удаляем старые карточки (кроме Итог и рубкг)
         for s_name in list(wb_pf.sheetnames):
             if s_name not in ("Итог", "рубкг"):
-                if not any(emp["full_name"] == s_name for emp in st.session_state.staff_roster):
-                    del wb_pf[s_name]
+                del wb_pf[s_name]
 
-        # 1.2 Создаем недостающие листы и ставим ставки
+        # 1.3 Создаем новые карточки строго по реестру
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
             
-            if name not in wb_pf.sheetnames and tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
+            if tpl_pf_name:
                 new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
                 new_ws.title = name
+                # Очищаем от старых смен и ставим индивидуальную ставку
                 for r in range(2, 33):
-                    new_ws.cell(row=r, column=2).value = None
-                    new_ws.cell(row=r, column=3).value = rate_val
+                    new_ws.cell(row=r, column=2).value = None # Смены
+                    new_ws.cell(row=r, column=3).value = rate_val # Ставка (Колонка C)
+                    for c in [4, 5, 6, 7, 8, 9, 10, 11]: # Очищаем остальные колонки
+                        if new_ws.cell(row=r, column=c).data_type != 'f':
+                            new_ws.cell(row=r, column=c).value = None
 
-        # 1.3 Ставим смены
+        # 1.4 Ставим смены в созданные карточки
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_full_name in emps:
@@ -207,16 +211,17 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # 1.4 Пересобираем лист "Итог" строго по реестру
+        # 1.5 Пересобираем лист "Итог" с нуля
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
-            # Очищаем старые данные
+            
+            # Очищаем всё от старых сотрудников
             for r in range(2, 50):
                 ws_it.cell(row=r, column=1).value = None
                 ws_it.cell(row=r, column=2).value = None
                 ws_it.cell(row=r, column=3).value = None
             
-            # Записываем новый список
+            # Записываем сотрудников строго по реестру
             for i, emp in enumerate(st.session_state.staff_roster):
                 r = 2 + i
                 name = emp["full_name"]
@@ -228,11 +233,13 @@ def generate_and_download():
                 ws_it.cell(row=r, column=2, value=shifts_count * rate_val)
                 ws_it.cell(row=r, column=3, value=shifts_count)
                 
-            # Пишем "ИТОГО:" в конец
+            # Пишем "ИТОГО:"
             itogo_r = 2 + len(st.session_state.staff_roster)
             ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
             ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
             ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
+            
+            ws_it.delete_rows(itogo_r + 1, 50)
 
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
@@ -250,7 +257,6 @@ def generate_and_download():
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
         
-        # Ищем начало блока
         block_r = 4
         for r in range(1, 50):
             for c in range(1, 4):
@@ -259,7 +265,6 @@ def generate_and_download():
                     break
             if block_r > 4: break
             
-        # Записываем строго по реестру
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
@@ -273,9 +278,8 @@ def generate_and_download():
                     hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
                     ws_gr.cell(row=r, column=col_idx, value=hours)
         
-        # ОЧИСТКА: Удаляем все строки ниже реестра (чтобы убрать пустые желтые квадраты)
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
-        ws_gr.delete_rows(start_delete_row, 50) # Удаляем 50 строк вниз
+        ws_gr.delete_rows(start_delete_row, 100)
         
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
@@ -594,7 +598,7 @@ with tab4:
             
             st.session_state.staff_roster = new_roster
             save_global_settings()
-            st.success("✅ Глобальный штат сохранен! Теперь он применяется ко всем месяцам.")
+            st.success("✅ Глобальный штат сохранен!")
             st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить стандартный список.")
