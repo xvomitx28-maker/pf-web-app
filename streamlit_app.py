@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 ДИЗАЙН (Как было изначально)
+# 🎨 БЕЗОПАСНЫЙ ДИЗАЙН (CSS)
 # ==========================================
 st.set_page_config(page_title="Учёт выработки", page_icon="🏭", layout="wide")
 
@@ -66,6 +66,13 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "Обвальщик", "grade": "1 разряд", "rate": 5500},
         {"post": "Обвальщик", "grade": "2 разряд", "rate": 4800},
         {"post": "Грузчик", "grade": "", "rate": 4300},
+    ],
+    "delicatessen": [
+        {"post": "Изготовитель деликатесов", "grade": "1 разряд", "rate": 5200},
+        {"post": "Изготовитель деликатесов", "grade": "2 разряд", "rate": 4600},
+        {"post": "Формовщик", "grade": "", "rate": 4300},
+        {"post": "Весовщик", "grade": "", "rate": 4000},
+        {"post": "Грузчик", "grade": "", "rate": 3800},
     ],
 }
 
@@ -283,7 +290,7 @@ def generate_and_download():
         buf = io.BytesIO(); wb_pf.save(buf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf.getvalue())
 
-        # 5.2. ГРАФИК (Считаем в Python)
+        # 5.2. ГРАФИК
         wb_gr = load_workbook(io.BytesIO(open(tpl_gr_name, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -330,12 +337,10 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            # Очищаем дни
             for c_idx in range(4, 35):
                 cell = ws_gr.cell(row=r, column=c_idx)
                 cell.value = None; cell.fill = NO_FILL; cell.comment = None
 
-            # Считаем смены в Python
             shifts_count = 0
             for day_str, data in st.session_state.shifts.items():
                 day = int(day_str); col_idx = 3 + day
@@ -351,7 +356,6 @@ def generate_and_download():
                     ws_gr.cell(row=r, column=col_idx, value=hours)
                     shifts_count += 1
             
-            # Записываем готовое число
             ws_gr.cell(row=r, column=itogo_col, value=shifts_count)
         
         ws_gr.delete_rows(block_r + 1 + len(st.session_state.staff_roster), 100)
@@ -413,9 +417,14 @@ def generate_and_download():
         wb_sh = load_workbook(io.BytesIO(open(tpl_sh_name, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         
+        # ЗДЕСЬ ИЗМЕНЕНИЕ: для деликатесов ищем лист "ДО"
         sh_sheet_map = {
-            "pf": "ПФ", "main_deboning": "Обвалка", "chicken_deboning": "Куриная обвалка",
-            "thermal": "Термичка", "offal": "Ливерное", "delicatessen": "Деликатесы"
+            "pf": "ПФ", 
+            "main_deboning": "Обвалка", 
+            "chicken_deboning": "Куриная обвалка",
+            "thermal": "Термичка", 
+            "offal": "Ливерное", 
+            "delicatessen": "ДО"
         }
         sheet_name_sh = sh_sheet_map.get(dept_id, "ПФ")
         
