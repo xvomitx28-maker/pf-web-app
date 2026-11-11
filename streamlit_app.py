@@ -8,7 +8,7 @@ import os
 import base64
 import json
 import re
-import gc # Для очистки памяти
+import gc
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from openpyxl.comments import Comment
@@ -136,7 +136,7 @@ def load_initial_staff(dept_id):
     tpl_name = get_template_name("tpl_tabel", dept_id, "xlsm")
     if not os.path.exists(tpl_name): return []
     with open(tpl_name, "rb") as f:
-        wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True) # read_only ускоряет чтение
+        wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True)
     res = []
     for sname in wb.sheetnames:
         if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]"): continue
@@ -223,7 +223,7 @@ def load_month_from_db(record_id):
     return False
 
 # ==========================================
-# 5. ГЕНЕРАЦИЯ ФАЙЛОВ (С ОПТИМИЗАЦИЕЙ)
+# 5. ГЕНЕРАЦИЯ ФАЙЛОВ
 # ==========================================
 def generate_and_download():
     try:
@@ -260,10 +260,8 @@ def generate_and_download():
                         new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
                         new_ws.title = sheet_name
                         for r in range(2, 33):
-                            cell_b = new_ws.cell(row=r, column=2)
-                            if cell_b.data_type != 'f': cell_b.value = None 
-                            cell_c = new_ws.cell(row=r, column=3)
-                            if cell_c.data_type != 'f': cell_c.value = rate_val 
+                            if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None 
+                            if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = rate_val 
 
                 if tpl_pf_sheet in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_sheet for e in st.session_state.staff_roster):
                     del wb_pf[tpl_pf_sheet]
@@ -299,17 +297,14 @@ def generate_and_download():
 
                 buf = io.BytesIO(); wb_pf.save(buf)
                 zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf.getvalue())
-                
-                # Очистка памяти
-                del wb_pf
-                gc.collect()
+                del wb_pf; gc.collect()
 
-            # 5.2. ГРАФИК
+            # 5.2. ГРАФИК (ОПТИМИЗИРОВАНО)
             with st.spinner("Собираем График..."):
                 with open(tpl_gr_name, "rb") as f:
                     wb_gr = load_workbook(io.BytesIO(f.read()))
                 
-                wb_gr.calculation.fullCalcOnLoad = True
+                # Отключаем fullCalcOnLoad для графика, так как мы сами считаем смены
                 ws_gr = wb_gr.active
                 ws_gr['A1'] = m_name
                 try: ws_gr.title = f"{m_name} {y_val}"
@@ -331,7 +326,7 @@ def generate_and_download():
                     ws_gr.cell(row=2, column=itogo_col, value="ИТОГО")
 
                 block_r = 4
-                for r in range(1, 50):
+                for r in range(1, 20): # Сканируем только начало таблицы
                     for c in range(1, 4):
                         if "отделение" in str(ws_gr.cell(row=r, column=c).value or "").lower(): block_r = r; break
                     if block_r > 4: break
@@ -354,7 +349,8 @@ def generate_and_download():
                     ws_gr.cell(row=r, column=2, value=emp["full_name"])
                     ws_gr.cell(row=r, column=3, value=emp["post"])
 
-                    for c_idx in range(4, 35):
+                    # Чистим только те дни, которые есть в месяце
+                    for c_idx in range(4, 3 + num_days + 1):
                         cell = ws_gr.cell(row=r, column=c_idx)
                         cell.value = None; cell.fill = NO_FILL; cell.comment = None
 
@@ -375,12 +371,16 @@ def generate_and_download():
                     
                     ws_gr.cell(row=r, column=itogo_col, value=shifts_count)
                 
-                ws_gr.delete_rows(block_r + 1 + len(st.session_state.staff_roster), 100)
+                # Безопасная очистка пустых строк внизу (без delete_rows)
+                for r in range(last_emp_row + 1, last_emp_row + 20):
+                    for c in range(1, itogo_col + 1):
+                        cell = ws_gr.cell(row=r, column=c)
+                        cell.value = None
+                        cell.fill = NO_FILL
+                
                 buf = io.BytesIO(); wb_gr.save(buf)
                 zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf.getvalue())
-                
-                del wb_gr
-                gc.collect()
+                del wb_gr; gc.collect()
 
             # 5.3. ПОДРАБОТЧИКИ
             with st.spinner("Собираем Подработчиков..."):
@@ -435,9 +435,7 @@ def generate_and_download():
                         
                 buf = io.BytesIO(); wb_sub.save(buf)
                 zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf.getvalue())
-                
-                del wb_sub
-                gc.collect()
+                del wb_sub; gc.collect()
 
             # 5.4. ВЕДОМОСТЬ ШАШИНОЙ
             with st.spinner("Собираем Ведомость Шашиной..."):
@@ -466,9 +464,7 @@ def generate_and_download():
                         
                 buf = io.BytesIO(); wb_sh.save(buf)
                 zf.writestr(f"Шашина_{m_name}_{y_val}.xlsx", buf.getvalue())
-                
-                del wb_sh
-                gc.collect()
+                del wb_sh; gc.collect()
 
         return zip_buf.getvalue()
     except Exception as e:
@@ -514,18 +510,14 @@ if st.session_state.active_month:
     st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
     
     if st.sidebar.button("⬇️ Сгенерировать и скачать файлы (ZIP)", type="primary", use_container_width=True):
-        with st.status("Формируем Excel-файлы...", expanded=True) as status:
-            zip_data = generate_and_download()
-            if zip_data:
-                status.update(label="✅ Файлы успешно сформированы!", state="complete", expanded=False)
-                st.sidebar.download_button(
-                    label="💾 Сохранить на компьютер", 
-                    data=zip_data, 
-                    file_name=f"Итоги_{st.session_state.active_month}_{st.session_state.active_year}_{st.session_state.current_dept}.zip", 
-                    mime="application/zip", use_container_width=True
-                )
-            else:
-                status.update(label="❌ Ошибка при создании файлов", state="error", expanded=True)
+        zip_data = generate_and_download()
+        if zip_data:
+            st.sidebar.download_button(
+                label="💾 Сохранить на компьютер", 
+                data=zip_data, 
+                file_name=f"Итоги_{st.session_state.active_month}_{st.session_state.active_year}_{st.session_state.current_dept}.zip", 
+                mime="application/zip", use_container_width=True
+            )
 else:
     st.sidebar.warning("### Месяц не выбран\nСоздайте новый или выберите старый.")
 
