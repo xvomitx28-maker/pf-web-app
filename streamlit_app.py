@@ -46,7 +46,6 @@ DEPARTMENTS = {
     "delicatessen": "Деликатесное отделение"
 }
 
-# Уникальные должности для каждого отдела
 POSITIONS_BY_DEPT = {
     "pf": ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"],
     "main_deboning": ["Обвальщик", "Жиловщик", "Весовщик", "Грузчик", "Бригадир"],
@@ -56,7 +55,6 @@ POSITIONS_BY_DEPT = {
     "delicatessen": ["Изготовитель деликатесов", "Формовщик", "Весовщик", "Грузчик"]
 }
 
-# Стартовые ставки (если база пустая)
 DEFAULT_RATES_BY_DEPT = {
     "pf": [
         {"post": "Весовщик", "grade": "", "rate": 5000},
@@ -69,7 +67,6 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "Обвальщик", "grade": "2 разряд", "rate": 4800},
         {"post": "Грузчик", "grade": "", "rate": 4300},
     ],
-    # Для остальных отделов можно добавить по аналогии
 }
 
 @st.cache_resource
@@ -84,13 +81,14 @@ supabase = init_connection()
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
+BLUE_FILL = PatternFill(start_color="8EA9DB", end_color="8EA9DB", fill_type="solid")
 NO_FILL = PatternFill(fill_type=None) 
 
 # ==========================================
 # 2. ИНИЦИАЛИЗАЦИЯ СЕССИИ
 # ==========================================
 _defaults = {
-    "current_dept": "pf", # По умолчанию ПФ
+    "current_dept": "", 
     "active_month": "", "active_year": "", "current_id": None,
     "shifts": {}, 
     "tonnage": {}, "subordinates": [], 
@@ -139,10 +137,10 @@ def load_initial_staff(dept_id):
     return res
 
 # ==========================================
-# 4. РАБОТА С БАЗОЙ ДАННЫХ (ПРИВЯЗКА К ОТДЕЛУ)
+# 4. РАБОТА С БАЗОЙ ДАННЫХ
 # ==========================================
 def save_global_settings():
-    if not supabase: return
+    if not supabase or not st.session_state.current_dept: return
     dept_id = st.session_state.current_dept
     rec_id = f"GLOBAL_SETTINGS_{dept_id}"
     try:
@@ -158,7 +156,7 @@ def save_global_settings():
     except Exception as e: st.error(f"Ошибка сохранения настроек: {e}")
 
 def load_global_settings():
-    if not supabase: return
+    if not supabase or not st.session_state.current_dept: return
     dept_id = st.session_state.current_dept
     rec_id = f"GLOBAL_SETTINGS_{dept_id}"
     try:
@@ -168,9 +166,13 @@ def load_global_settings():
             payload = json.loads(raw_json)
             st.session_state.staff_roster = payload.get("staff_roster", [])
             st.session_state.rates = payload.get("rates", [])
+            
+            # Защита: если список ставок пустой, подставляем дефолтные
+            if not st.session_state.rates:
+                st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
         else:
             st.session_state.staff_roster = []
-            st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [])
+            st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
             save_global_settings()
     except Exception as e: st.error(f"Ошибка загрузки настроек: {e}")
 
@@ -220,7 +222,6 @@ def generate_and_download():
     y_val = st.session_state.active_year
     dept_id = st.session_state.current_dept
 
-    # Подтягиваем правильные шаблоны для текущего отдела
     tpl_pf_name = get_template_name("tpl_tabel", dept_id, "xlsm")
     tpl_gr_name = get_template_name("tpl_graph", dept_id, "xlsx")
     tpl_sub_name = get_template_name("tpl_sub", dept_id, "xlsm")
@@ -294,31 +295,32 @@ def generate_and_download():
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         
-        current_itogo_col = None
+        itogo_col = None
         for c_idx in range(4, 50):
             for r_idx in [1, 2, 3]:
-                if str(ws_gr.cell(row=r_idx, column=c_idx).value or "").strip().upper() == "ИТОГО": current_itogo_col = c_idx; break
-            if current_itogo_col: break
-        
-        target_itogo_col = 4 + num_days
-        if current_itogo_col:
-            if current_itogo_col < target_itogo_col: ws_gr.insert_cols(current_itogo_col, target_itogo_col - current_itogo_col)
-            elif current_itogo_col > target_itogo_col: ws_gr.delete_cols(target_itogo_col, current_itogo_col - target_itogo_col)
-        
-        itogo_col = target_itogo_col
-        
-        for d in range(1, num_days + 1):
-            ws_gr.cell(row=2, column=3 + d, value=d)
-            for r_idx in [1, 2, 3]: ws_gr.cell(row=r_idx, column=3 + d).fill = NO_FILL
-        
+                val = str(ws_gr.cell(row=r_idx, column=c_idx).value or "").strip().upper()
+                if "ИТОГО" in val:
+                    itogo_col = c_idx; break
+            if itogo_col: break
+            
+        if not itogo_col:
+            itogo_col = 35 
+            ws_gr.cell(row=2, column=itogo_col, value="ИТОГО")
+
         block_r = 4
         for r in range(1, 50):
             for c in range(1, 4):
                 if "отделение" in str(ws_gr.cell(row=r, column=c).value or "").lower(): block_r = r; break
             if block_r > 4: break
             
-        last_day_col_letter = get_column_letter(3 + num_days)
         last_emp_row = block_r + len(st.session_state.staff_roster)
+        for r_idx in range(1, last_emp_row + 1):
+            ws_gr.cell(row=r_idx, column=itogo_col).fill = BLUE_FILL
+
+        for d in range(1, 32):
+            ws_gr.cell(row=2, column=3 + d, value=d if d <= num_days else None)
+            for r_idx in [1, 2, 3]:
+                ws_gr.cell(row=r_idx, column=3 + d).fill = NO_FILL
         
         for r_idx in range(1, last_emp_row + 1):
             for c_idx in [1, 2, 3]: ws_gr.cell(row=r_idx, column=c_idx).fill = NO_FILL
@@ -329,7 +331,7 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            for c_idx in range(4, 3 + num_days + 1):
+            for c_idx in range(4, 35):
                 cell = ws_gr.cell(row=r, column=c_idx)
                 cell.value = None; cell.fill = NO_FILL; cell.comment = None
 
@@ -345,7 +347,7 @@ def generate_and_download():
                 elif emp["full_name"] in data.get("timesheet", []):
                     ws_gr.cell(row=r, column=col_idx, value=hours)
             
-            ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:{last_day_col_letter}{r})")
+            ws_gr.cell(row=r, column=itogo_col, value=f"=COUNT(D{r}:AI{r})")
         
         ws_gr.delete_rows(block_r + 1 + len(st.session_state.staff_roster), 100)
         buf = io.BytesIO(); wb_gr.save(buf)
@@ -434,24 +436,34 @@ def generate_and_download():
 # 6. ИНТЕРФЕЙС (SIDEBAR)
 # ==========================================
 st.sidebar.title("🏭 Выбор отделения")
-dept_options = list(DEPARTMENTS.keys())
-dept_labels = list(DEPARTMENTS.values())
+dept_options = [""] + list(DEPARTMENTS.keys())
+dept_labels = ["--- Выберите отделение ---"] + list(DEPARTMENTS.values())
+
+try: current_idx = dept_options.index(st.session_state.current_dept)
+except ValueError: current_idx = 0
+
 selected_idx = st.sidebar.selectbox(
     "В каком отделе вы работаете?", 
     range(len(dept_options)), 
     format_func=lambda x: dept_labels[x],
-    index=dept_options.index(st.session_state.current_dept)
+    index=current_idx
 )
+selected_dept = dept_options[selected_idx]
 
-if dept_options[selected_idx] != st.session_state.current_dept:
-    st.session_state.current_dept = dept_options[selected_idx]
+if selected_dept != st.session_state.current_dept:
+    st.session_state.current_dept = selected_dept
     st.session_state.active_month = ""
     st.session_state.current_id = None
     st.session_state.shifts = {}
     st.session_state.tonnage = {}
     st.session_state.subordinates = []
-    load_global_settings()
+    if selected_dept: load_global_settings()
     st.rerun()
+
+if not st.session_state.current_dept:
+    st.title("🏭 Учёт выработки")
+    st.info("👈 Пожалуйста, выберите ваше отделение в левой панели, чтобы начать работу.")
+    st.stop()
 
 st.sidebar.markdown("---")
 st.sidebar.header("🗓️ Текущий период")
@@ -487,9 +499,6 @@ if supabase:
             st.sidebar.caption("Нет сохраненных месяцев для этого отдела.")
     except: pass
 
-# ==========================================
-# 7. ОСНОВНОЙ ЭКРАН
-# ==========================================
 st.title(f"📊 {DEPARTMENTS[st.session_state.current_dept]} — {st.session_state.active_month} {st.session_state.active_year}" if st.session_state.active_month else f"📊 {DEPARTMENTS[st.session_state.current_dept]} — Учёт выработки")
 
 tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки", "👥 Кадры"])
@@ -621,6 +630,11 @@ with tab2:
 # ================= TAB 3: СТАВКИ =================
 with tab3:
     st.subheader(f"Справочник ставок ({DEPARTMENTS[st.session_state.current_dept]})")
+    
+    # Защита: если список ставок пуст, создаем одну пустую строку для редактирования
+    if not st.session_state.rates:
+        st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
+        
     df_rates = pd.DataFrame(st.session_state.rates)
     edited_rates = st.data_editor(
         df_rates, num_rows="dynamic", use_container_width=True,
