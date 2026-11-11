@@ -187,6 +187,8 @@ def generate_and_download():
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # ================= 1. ТАБЕЛЬ (xlsm) =================
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
+        wb_pf.calculation.fullCalcOnLoad = True
+        wb_pf.calculation.calcMode = 'auto'
 
         tpl_pf_name = None
         for s_name in wb_pf.sheetnames:
@@ -202,19 +204,10 @@ def generate_and_download():
             if s_name not in ("Итог", "рубкг", tpl_pf_name):
                 del wb_pf[s_name]
 
-        total_all_shifts = 0
-        total_all_money = 0
-
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
             
-            shifts_count = sum(1 for d, data in st.session_state.shifts.items() if name in data.get("timesheet", []))
-            total_money = shifts_count * rate_val
-            
-            total_all_shifts += shifts_count
-            total_all_money += total_money
-
             if name not in wb_pf.sheetnames:
                 if tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
                     new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
@@ -226,29 +219,26 @@ def generate_and_download():
                             if new_ws.cell(row=r, column=c).data_type != 'f':
                                 new_ws.cell(row=r, column=c).value = None
                     
-                    new_ws.cell(row=33, column=2, value=shifts_count)
-                    new_ws.cell(row=33, column=10, value=total_money)
+                    # Возвращаем формулы внизу карточки
+                    new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
+                    new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
 
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
-        # Ставим смены и деньги в ежедневные ячейки
+        # Ставим смены (только выходы)
         for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
             timesheet_emps = data.get("timesheet", [])
             for emp_full_name in timesheet_emps:
                 if emp_full_name in wb_pf.sheetnames:
-                    emp_info = next((e for e in st.session_state.staff_roster if e["full_name"] == emp_full_name), None)
-                    rate_val = get_rate_for(emp_info["post"], emp_info.get("grade", "")) if emp_info else 4500
-                    
-                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1) # Выход
-                    wb_pf[emp_full_name].cell(row=day + 1, column=8, value=rate_val) # Итого
-                    wb_pf[emp_full_name].cell(row=day + 1, column=10, value=rate_val) # Сумма к выплате
+                    # Пишем 1 только в колонку B. Колонки H и J оставляем с формулами шаблона.
+                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
             
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Лист "Итог"
+        # Лист "Итог" с формулами
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -261,16 +251,14 @@ def generate_and_download():
                 name = emp["full_name"]
                 ws_it.cell(row=r, column=1, value=name)
                 
-                shifts_count = sum(1 for d, data in st.session_state.shifts.items() if name in data.get("timesheet", []))
-                rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
-                
-                ws_it.cell(row=r, column=2, value=shifts_count * rate_val)
-                ws_it.cell(row=r, column=3, value=shifts_count)
+                # Формулы, которые тянут данные из карточки сотрудника
+                ws_it.cell(row=r, column=2, value=f"='{name}'!J33")
+                ws_it.cell(row=r, column=3, value=f"='{name}'!B33")
                 
             itogo_r = 2 + len(st.session_state.staff_roster)
             ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
-            ws_it.cell(row=itogo_r, column=2, value=total_all_money)
-            ws_it.cell(row=itogo_r, column=3, value=total_all_shifts)
+            ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
+            ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
             
             ws_it.delete_rows(itogo_r + 1, 50)
 
@@ -279,6 +267,8 @@ def generate_and_download():
 
         # ================= 2. ГРАФИК (xlsx) =================
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
+        wb_gr.calculation.fullCalcOnLoad = True
+        wb_gr.calculation.calcMode = 'auto'
         ws_gr = wb_gr.active
         ws_gr['A1'] = m_name
         try: ws_gr.title = f"{m_name} {y_val}"
@@ -303,7 +293,6 @@ def generate_and_download():
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            total_hours = 0
             for day_str, data in st.session_state.shifts.items():
                 timesheet_emps = data.get("timesheet", [])
                 graph_only_dict = data.get("graph_only", {})
@@ -323,12 +312,11 @@ def generate_and_download():
                         comment_text = "Подработка в другом цехе"
                     cell.comment = Comment(text=comment_text, author="Система учёта")
                     
-                    total_hours += hours
                 elif emp["full_name"] in timesheet_emps:
                     ws_gr.cell(row=r, column=col_idx, value=hours)
-                    total_hours += hours
             
-            ws_gr.cell(row=r, column=36, value=total_hours)
+            # Формула Итого (Колонка 36)
+            ws_gr.cell(row=r, column=36, value=f"=SUM(D{r}:AI{r})")
         
         start_delete_row = block_r + 1 + len(st.session_state.staff_roster)
         ws_gr.delete_rows(start_delete_row, 100)
@@ -338,6 +326,8 @@ def generate_and_download():
 
         # ================= 3. ПОДРАБОТЧИКИ (xlsm) =================
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
+        wb_sub.calculation.fullCalcOnLoad = True
+        wb_sub.calculation.calcMode = 'auto'
         
         tpl_sub_name = None
         for s in wb_sub.sheetnames:
@@ -362,24 +352,25 @@ def generate_and_download():
                     new_ws.cell(row=r, column=3).value = None
                     new_ws.cell(row=r, column=8).value = None
                     new_ws.cell(row=r, column=10).value = None
+                
+                # Формулы внизу карточки подработчика
+                new_ws.cell(row=33, column=2, value="=SUM(B2:B32)")
+                new_ws.cell(row=33, column=10, value="=SUM(J2:J32)")
             
             day = int(sub["date"].split(".")[0])
             
             wb_sub[title].cell(row=day + 1, column=2, value=1) # Смена
             wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"]) # Ставка
-            wb_sub[title].cell(row=day + 1, column=8, value=sub["amount"]) # Итого
-            wb_sub[title].cell(row=day + 1, column=10, value=sub["amount"]) # Сумма к выплате
+            
+            # Формулы для Итого и Суммы к выплате
+            wb_sub[title].cell(row=day + 1, column=8, value=f"=IF(B{day+1}=1, C{day+1}, 0)")
+            wb_sub[title].cell(row=day + 1, column=10, value=f"=H{day+1}")
             
             if title not in subs_by_fio:
                 subs_by_fio[title] = {"amount": 0.0, "shifts": 0}
             subs_by_fio[title]["amount"] += float(sub["amount"])
             subs_by_fio[title]["shifts"] += 1
             
-        for title, data in subs_by_fio.items():
-            if title in wb_sub.sheetnames:
-                wb_sub[title].cell(row=33, column=2, value=data["shifts"])
-                wb_sub[title].cell(row=33, column=10, value=data["amount"])
-
         if tpl_sub_name in wb_sub.sheetnames:
             del wb_sub[tpl_sub_name]
         
@@ -394,27 +385,24 @@ def generate_and_download():
                 ws_it.cell(row=r, column=2).value = None
                 ws_it.cell(row=r, column=3).value = None
             
-            total_sub_amount = 0
-            total_sub_shifts = 0
-            
             for i, (fio, data) in enumerate(subs_by_fio.items()):
                 r = 2 + i
                 if r < itogo_row:
                     ws_it.cell(row=r, column=1, value=fio)
-                    ws_it.cell(row=r, column=2, value=data["amount"])
-                    ws_it.cell(row=r, column=3, value=data["shifts"])
-                    total_sub_amount += data["amount"]
-                    total_sub_shifts += data["shifts"]
+                    # Ссылки на карточки подработчиков
+                    ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
+                    ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
 
             if itogo_row < 50:
-                ws_it.cell(row=itogo_row, column=2, value=total_sub_amount)
-                ws_it.cell(row=itogo_row, column=3, value=total_sub_shifts)
+                ws_it.cell(row=itogo_row, column=2, value=f"=SUM(B2:B{itogo_row-1})")
+                ws_it.cell(row=itogo_row, column=3, value=f"=SUM(C2:C{itogo_row-1})")
                 
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
         # ================= 4. ШАШИНА (xlsx) =================
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
+        wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
             ws_sh = wb_sh["ПФ"]
             start_row = 4
