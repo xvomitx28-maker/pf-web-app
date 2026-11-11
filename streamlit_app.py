@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 БЕЗОПАСНЫЙ ДИЗАЙН (CSS)
+# 🎨 ДИЗАЙН (Как было изначально)
 # ==========================================
 st.set_page_config(page_title="Учёт выработки", page_icon="🏭", layout="wide")
 
@@ -99,7 +99,7 @@ for k, v in _defaults.items():
         st.session_state[k] = v
 
 # ==========================================
-# 3. ХЕЛПЕРЫ
+# 3. ХЕЛПЕРЫ И АВТОВОССТАНОВЛЕНИЕ
 # ==========================================
 def get_current_positions():
     return POSITIONS_BY_DEPT.get(st.session_state.current_dept, [])
@@ -120,6 +120,7 @@ def get_template_name(base_name, dept_id, ext):
     return f"{base_name}_{dept_id}.{ext}"
 
 def load_initial_staff(dept_id):
+    """Вытаскивает сотрудников прямо из загруженного Excel-шаблона на GitHub"""
     tpl_name = get_template_name("tpl_tabel", dept_id, "xlsm")
     if not os.path.exists(tpl_name): return []
     wb = load_workbook(io.BytesIO(open(tpl_name, "rb").read()), keep_vba=True)
@@ -167,11 +168,11 @@ def load_global_settings():
             st.session_state.staff_roster = payload.get("staff_roster", [])
             st.session_state.rates = payload.get("rates", [])
             
-            # Защита: если список ставок пустой, подставляем дефолтные
             if not st.session_state.rates:
                 st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
         else:
-            st.session_state.staff_roster = []
+            # АВТОВОССТАНОВЛЕНИЕ: Если база пуста, сами подтягиваем штат из шаблона!
+            st.session_state.staff_roster = load_initial_staff(dept_id)
             st.session_state.rates = DEFAULT_RATES_BY_DEPT.get(dept_id, [{"post": "Сотрудник", "grade": "", "rate": 4500}])
             save_global_settings()
     except Exception as e: st.error(f"Ошибка загрузки настроек: {e}")
@@ -551,18 +552,20 @@ with tab1:
 
         st.markdown("**Кого отметить?**")
         selected = {}
+        # Табличный вид: Имя | Смена | Подработка | Цех
         for emp in st.session_state.staff_roster:
-            col_main, col_other, col_dept = st.columns([4, 3, 3])
-            with col_main:
+            col1, col2, col3, col4 = st.columns([4, 2, 2, 3])
+            with col1:
                 label = f"{emp['short_name']} — {emp['post']}"
                 if emp.get('grade') and emp['grade'] != "—": label += f" ({emp['grade']})"
-                is_main = st.checkbox(label, key=f"main_{emp['full_name']}")
-            with col_other:
-                is_other = st.checkbox("Подработка (другой цех)", key=f"other_{emp['full_name']}")
-            with col_dept:
-                dept_name = ""
-                if is_other:
-                    dept_name = st.text_input("Подразделение", key=f"dept_{emp['full_name']}", label_visibility="collapsed", placeholder="Введите цех...")
+                st.write(label)
+            with col2:
+                is_main = st.checkbox("Смена", key=f"main_{emp['full_name']}", label_visibility="collapsed")
+            with col3:
+                is_other = st.checkbox("Подработка", key=f"other_{emp['full_name']}")
+            with col4:
+                dept_name = st.text_input("Цех", key=f"dept_{emp['full_name']}", label_visibility="collapsed", placeholder="Введите цех...")
+            
             selected[emp["full_name"]] = {"timesheet": is_main, "graph_only": is_other, "dept": dept_name}
 
         if st.button("💾 Провести смену", type="primary"):
@@ -631,7 +634,6 @@ with tab2:
 with tab3:
     st.subheader(f"Справочник ставок ({DEPARTMENTS[st.session_state.current_dept]})")
     
-    # Защита: если список ставок пуст, создаем одну пустую строку для редактирования
     if not st.session_state.rates:
         st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
         
