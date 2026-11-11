@@ -7,6 +7,7 @@ import zipfile
 import os
 import base64
 import json
+import re
 from openpyxl import load_workbook
 from supabase import create_client, Client
 
@@ -28,40 +29,31 @@ TPL_SUB = "tpl_sub.xlsm"
 TPL_GRAPH = "tpl_graph.xlsx"
 TPL_SH = "tpl_sh.xlsx"
 
-# ---------- БАЗОВЫЕ НАСТРОЙКИ (Ставки) ----------
-DEFAULT_RATES = [
-    {"post": "Весовщик", "grade": "", "rate": 5000},
-    {"post": "Грузчик", "grade": "", "rate": 4300},
-    {"post": "Изготовитель мясных п/ф", "grade": "1 разряд", "rate": 3700},
-    {"post": "Изготовитель мясных п/ф", "grade": "2 разряд", "rate": 4500},
-    {"post": "Формовщик", "grade": "", "rate": 4500},
-    {"post": "Жиловщик", "grade": "", "rate": 4500},
-    {"post": "Оператор линии", "grade": "", "rate": 4500},
-    {"post": "Бригадир", "grade": "", "rate": 4500},
-]
-
-MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-
 # ---------- ИНИЦИАЛИЗАЦИЯ ----------
 _defaults = {
-    "rates": DEFAULT_RATES,
     "active_month": "", "active_year": "", "current_id": None,
-    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_list": []
+    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_roster": []
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
 # ---------- ХЕЛПЕРЫ ----------
-def get_rate(post, grade):
-    for r in st.session_state.rates:
-        if r["post"] == post and r["grade"] == grade: return r["rate"]
-    return None
+def clean_name(name):
+    """Удаляет все лишние символы, оставляя только буквы для надежного поиска"""
+    return re.sub(r'[^а-яё]', '', str(name).lower())
 
-def get_positions(): return sorted(set(r["post"] for r in st.session_state.rates))
-def get_grades(post): return [r["grade"] for r in st.session_state.rates if r["post"] == post]
+def make_short_name(full_name):
+    """Автоматически создает короткое имя: Рузиева Шазие -> Рузиева Ш."""
+    parts = str(full_name).strip().split()
+    if len(parts) > 1:
+        return f"{parts[0]} {parts[1][0]}."
+    return parts[0] if parts else ""
 
-def read_staff_from_template():
+def load_initial_staff():
+    """Если штат пустой, пробуем вытащить его из шаблона Табеля"""
     if not os.path.exists(TPL_PF): return []
     wb = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
     res = []
@@ -69,17 +61,27 @@ def read_staff_from_template():
         if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]") or "вакансия" in sname.lower():
             continue
         low = sname.lower()
-        if "рузиева" in low and "шазие" in low: post = "Весовщик"
-        elif "насруддинов" in low or ("рузиев" in low and "ислом" in low): post = "Грузчик"
+        if "рузиева" in low: post = "Весовщик"
+        elif "насруддинов" in low or "рузиев и" in low: post = "Грузчик"
         else: post = "Изготовитель мясных п/ф"
-        res.append({"sheet": sname, "fio": sname, "post": post})
+        
+        res.append({
+            "full_name": sname, 
+            "short_name": make_short_name(sname), 
+            "post": post
+        })
     return res
 
 # ---------- БАЗА ДАННЫХ ----------
 def save_to_db():
     if not supabase or not st.session_state.current_id: return
     try:
-        payload = {"shifts": st.session_state.shifts, "tonnage": st.session_state.tonnage, "subordinates": st.session_state.subordinates}
+        payload = {
+            "shifts": st.session_state.shifts, 
+            "tonnage": st.session_state.tonnage, 
+            "subordinates": st.session_state.subordinates,
+            "staff_roster": st.session_state.staff_roster
+        }
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
         supabase.table("app_data").update(data).eq("id", st.session_state.current_id).execute()
@@ -96,6 +98,11 @@ def load_from_db(record_id):
             st.session_state.shifts = payload.get("shifts", {})
             st.session_state.tonnage = payload.get("tonnage", {})
             st.session_state.subordinates = payload.get("subordinates", [])
+            st.session_state.staff_roster = payload.get("staff_roster", [])
+            
+            if not st.session_state.staff_roster:
+                st.session_state.staff_roster = load_initial_staff()
+                
             st.session_state.current_id = record_id
             st.session_state.active_month, st.session_state.active_year = record_id.split("_")
             return True
@@ -103,30 +110,25 @@ def load_from_db(record_id):
         st.error(f"Ошибка загрузки: {e}")
     return False
 
-# ---------- ГЕНЕРАЦИЯ И СКАЧИВАНИЕ ----------
+# ---------- ГЕНЕРАЦИЯ ----------
 def generate_and_download():
-    if not all(os.path.exists(f) for f in [TPL_PF, TPL_SUB, TPL_GRAPH, TPL_SH]):
-        st.error("Шаблоны не найдены на GitHub!")
-        return None
-
     zip_buf = io.BytesIO()
     m_name = st.session_state.active_month
     y_val = st.session_state.active_year
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 1. ТАБЕЛЬ ПОЛУФАБРИКАТЫ (xlsm)
+        # 1. ТАБЕЛЬ (xlsm) - Единый кадровый шаблон
         wb_pf = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
         wb_pf.calculation.fullCalcOnLoad = True
 
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
-            for emp_sheet in emps:
-                if emp_sheet in wb_pf.sheetnames:
-                    wb_pf[emp_sheet].cell(row=day + 1, column=2, value=1)
+            for emp_full_name in emps:
+                if emp_full_name in wb_pf.sheetnames:
+                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Заполняем "Итог" в табеле значениями (без формул)
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -135,12 +137,7 @@ def generate_and_download():
                     sheet_name = str(fio_cell).strip()
                     if sheet_name in wb_pf.sheetnames:
                         shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
-                        rate = 4500
-                        for emp in st.session_state.staff_list:
-                            if emp["sheet"] == sheet_name:
-                                rate = get_rate(emp["post"], emp.get("grade", "")) or 4500
-                                break
-                        ws_it.cell(row=r, column=2, value=shifts_count * rate)
+                        ws_it.cell(row=r, column=2, value=shifts_count * 4500) 
                         ws_it.cell(row=r, column=3, value=shifts_count)
                 elif fio_cell and str(fio_cell).strip().lower() == "итого:":
                     ws_it.cell(row=r, column=2, value=f"=SUM(B2:B{r-1})")
@@ -149,7 +146,7 @@ def generate_and_download():
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # 2. ГРАФИК (xlsx)
+        # 2. ГРАФИК (xlsx) - Единый кадровый шаблон
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -170,32 +167,48 @@ def generate_and_download():
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             col_idx = 3 + day
-            for emp_sheet in emps:
-                surname = emp_sheet.split()[0].lower()
+            for emp_full_name in emps:
+                clean_surname = clean_name(emp_full_name)
                 for r in range(block_r + 1, block_r + 40):
-                    graph_fio = str(ws_gr.cell(row=r, column=2).value or "").lower()
-                    if surname in graph_fio:
-                        hours = 8 if "весовщик" in emp_sheet.lower() or "грузчик" in emp_sheet.lower() else 11
+                    graph_fio = clean_name(ws_gr.cell(row=r, column=2).value or "")
+                    if clean_surname in graph_fio:
+                        post = next((s["post"] for s in st.session_state.staff_roster if s["full_name"] == emp_full_name), "")
+                        hours = 8 if post in ("Весовщик", "Грузчик") else 11
                         ws_gr.cell(row=r, column=col_idx, value=hours)
                         break
         
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
 
-        # 3. ПОДРАБОТЧИКИ (xlsm)
+        # 3. ПОДРАБОТЧИКИ (xlsm) - Только пофамильно, динамически
         wb_sub = load_workbook(io.BytesIO(open(TPL_SUB, "rb").read()), keep_vba=True)
         wb_sub.calculation.fullCalcOnLoad = True
         
-        tpl_sub = wb_sub[wb_sub.sheetnames[0] if wb_sub.sheetnames[0] != 'Итог' else wb_sub.sheetnames[1]]
-        
+        # Находим лист-шаблон (все, что не Итог)
+        tpl_sheet_name = None
+        for s in wb_sub.sheetnames:
+            if s != "Итог":
+                tpl_sheet_name = s
+                break
+                
+        if not tpl_sheet_name:
+            st.error("В файле tpl_sub.xlsm нет листа-шаблона! Оставьте один пустой лист.")
+            return None
+            
+        # Удаляем все старые листы (кроме Итога и Шаблона)
+        for s in list(wb_sub.sheetnames):
+            if s not in ("Итог", tpl_sheet_name):
+                del wb_sub[s]
+                
         subs_by_fio = {}
         for sub in st.session_state.subordinates:
-            title = sub["fio"][:31]
+            title = sub["short_name"][:31]
             if title not in wb_sub.sheetnames:
-                new_ws = wb_sub.copy_worksheet(tpl_sub); new_ws.title = title
+                new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sheet_name])
+                new_ws.title = title
                 for r in range(2, 33): 
                     new_ws.cell(row=r, column=2).value = None
-                    new_ws.cell(row=r, column=3).value = None # Очищаем и суммы
+                    new_ws.cell(row=r, column=3).value = None
             
             day = int(sub["date"].split(".")[0])
             wb_sub[title].cell(row=day + 1, column=2, value=1)
@@ -205,8 +218,12 @@ def generate_and_download():
                 subs_by_fio[title] = {"amount": 0.0, "shifts": 0}
             subs_by_fio[title]["amount"] += float(sub["amount"])
             subs_by_fio[title]["shifts"] += 1
+            
+        # Удаляем сам лист-шаблон, чтобы он не попал в итоговый файл
+        if tpl_sheet_name in wb_sub.sheetnames:
+            del wb_sub[tpl_sheet_name]
         
-        # Заполняем "Итог" в подработчиках готовыми цифрами
+        # Заполняем Итог
         if "Итог" in wb_sub.sheetnames:
             ws_it = wb_sub["Итог"]
             itogo_row = 50
@@ -232,7 +249,7 @@ def generate_and_download():
         buf_sub = io.BytesIO(); wb_sub.save(buf_sub)
         zf.writestr(f"Подработчики_{m_name}_{y_val}.xlsm", buf_sub.getvalue())
 
-        # 4. ШАШИНА (xlsx)
+        # 4. ШАШИНА (xlsx) - Только пофамильно
         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         if "ПФ" in wb_sh.sheetnames:
@@ -241,7 +258,7 @@ def generate_and_download():
             for i, sub in enumerate(st.session_state.subordinates):
                 r = start_row + i
                 ws_sh.cell(row=r, column=2, value=i+1)
-                ws_sh.cell(row=r, column=3, value=sub["fio"])
+                ws_sh.cell(row=r, column=3, value=sub["short_name"])
                 ws_sh.cell(row=r, column=4, value=sub["post"])
                 ws_sh.cell(row=r, column=5, value=sub["grade"])
                 ws_sh.cell(row=r, column=6, value=11)
@@ -286,7 +303,7 @@ if supabase:
 # ---------- ОСНОВНОЙ ЭКРАН ----------
 st.title(f"📊 Отделение Полуфабрикатов — {st.session_state.active_month} {st.session_state.active_year}" if st.session_state.active_month else "📊 Учёт выработки")
 
-tab0, tab1, tab2, tab3 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки", "👥 Кадры"])
 
 # ================= TAB 0: СОЗДАНИЕ =================
 with tab0:
@@ -299,13 +316,11 @@ with tab0:
         record_id = f"{new_month}_{new_year}"
         if not supabase:
             st.error("Нет подключения к БД.")
-        elif not os.path.exists(TPL_PF):
-            st.error("Шаблоны не загружены на GitHub!")
         else:
             try:
                 existing = supabase.table("app_data").select("id").eq("id", record_id).execute()
                 if existing.data:
-                    st.error(f"Месяц {record_id} уже существует! Удалите его в Supabase.")
+                    st.error(f"Месяц {record_id} уже существует!")
                 else:
                     st.session_state.shifts = {}
                     st.session_state.tonnage = {}
@@ -313,9 +328,12 @@ with tab0:
                     st.session_state.active_month = new_month
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
-                    st.session_state.staff_list = read_staff_from_template()
+                    st.session_state.staff_roster = load_initial_staff()
                     
-                    empty_payload = json.dumps({"shifts": {}, "tonnage": {}, "subordinates": []})
+                    empty_payload = json.dumps({
+                        "shifts": {}, "tonnage": {}, "subordinates": [], 
+                        "staff_roster": st.session_state.staff_roster
+                    })
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
                     
@@ -329,27 +347,24 @@ with tab1:
     if not st.session_state.active_month:
         st.info("👈 Сначала создайте месяц.")
     else:
-        if not st.session_state.staff_list:
-            st.session_state.staff_list = read_staff_from_template()
-
-        st.subheader("Отметка смен")
+        st.subheader("Отметка смен (Штат)")
         c1, c2 = st.columns(2)
         with c1: shift_date = st.date_input("Дата смены", datetime.date.today())
         with c2: tonnage = st.number_input("Тоннаж цеха (кг)", min_value=0.0, value=0.0, step=1.0)
 
         st.markdown("**Кого отметить?**")
         selected = {}
-        for emp in st.session_state.staff_list:
-            selected[emp["sheet"]] = st.checkbox(f"{emp['fio']} — {emp['post']}", key=f"chk_{emp['sheet']}")
+        for emp in st.session_state.staff_roster:
+            selected[emp["full_name"]] = st.checkbox(f"{emp['short_name']} — {emp['post']}", key=f"chk_{emp['full_name']}")
 
         if st.button("💾 Провести смену", type="primary"):
             day_str = str(shift_date.day)
             if day_str not in st.session_state.shifts:
                 st.session_state.shifts[day_str] = []
             
-            for emp_sheet, checked in selected.items():
-                if checked and emp_sheet not in st.session_state.shifts[day_str]:
-                    st.session_state.shifts[day_str].append(emp_sheet)
+            for emp_full_name, checked in selected.items():
+                if checked and emp_full_name not in st.session_state.shifts[day_str]:
+                    st.session_state.shifts[day_str].append(emp_full_name)
             
             if tonnage > 0:
                 st.session_state.tonnage[day_str] = float(tonnage)
@@ -361,20 +376,20 @@ with tab1:
         st.markdown("---")
         st.markdown("**Кто уже отмечен в этом месяце:**")
         for day, emps in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
-            st.write(f"**{day} число:** {', '.join(emps)}")
+            short_names = [next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == e), e) for e in emps]
+            st.write(f"**{day} число:** {', '.join(short_names)}")
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
 with tab2:
     if not st.session_state.active_month:
         st.info("👈 Сначала создайте месяц.")
     else:
-        st.subheader("Внесение подработки")
+        st.subheader("Внесение подработки (Пофамильно)")
         c1, c2 = st.columns(2)
         with c1:
-            fio = st.text_input("ФИО")
-            post = st.selectbox("Должность", get_positions())
-            grades = get_grades(post)
-            grade = st.selectbox("Разряд", grades) if grades else ""
+            fio = st.text_input("ФИО подработчика (например, Иванов И.И. или просто Иванов И.)")
+            post = st.text_input("Должность", value="Изготовитель мясных п/ф")
+            grade = st.text_input("Разряд", value="")
         with c2:
             sub_date = st.date_input("Дата")
             amount = st.number_input("Сумма (руб)", min_value=0.0, value=4500.0, step=100.0)
@@ -384,23 +399,69 @@ with tab2:
                 st.error("Укажите ФИО")
             else:
                 st.session_state.subordinates.append({
-                    "fio": fio.strip(), "post": post, "grade": grade,
+                    "short_name": fio.strip(), # Для подработок используем то, что ввели
+                    "post": post, "grade": grade,
                     "date": sub_date.strftime("%d.%m.%Y"), "amount": float(amount)
                 })
                 save_to_db()
-                st.success("Подработка добавлена в базу!")
+                st.success("Подработка добавлена!")
                 st.rerun()
 
         st.markdown("---")
         st.markdown("**Список подработок за месяц:**")
         if st.session_state.subordinates:
-            st.table(pd.DataFrame(st.session_state.subordinates))
+            df_sub = pd.DataFrame(st.session_state.subordinates)
+            if not df_sub.empty:
+                st.table(df_sub[["short_name", "post", "date", "amount"]])
         else:
             st.write("Пока нет записей.")
 
 # ================= TAB 3: СТАВКИ =================
 with tab3:
     st.subheader("Справочник ставок")
-    df = pd.DataFrame(st.session_state.rates)
-    df.columns = ["Должность", "Разряд", "Ставка"]
-    st.data_editor(df, use_container_width=True, disabled=True)
+    st.info("Ставки задаются в коде программы. Если нужно их поменять, обратитесь к разработчику.")
+
+# ================= TAB 4: КАДРЫ =================
+with tab4:
+    st.subheader("Управление штатом")
+    st.info("Задайте здесь эталонные ФИО. Программа использует Полное ФИО для Графика и Табеля, а Короткое — для удобства на экране.")
+    
+    # Форма добавления
+    with st.expander("➕ Добавить нового сотрудника в штат"):
+        c1, c2, c3 = st.columns(3)
+        with c1: new_full = st.text_input("Полное ФИО (как в Табеле/Графике)")
+        with c2: new_short = st.text_input("Короткое ФИО (для списков)")
+        with c3: new_post = st.selectbox("Должность", ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик"])
+        
+        if st.button("Добавить в штат"):
+            if new_full and new_short:
+                st.session_state.staff_roster.append({
+                    "full_name": new_full.strip(), "short_name": new_short.strip(), "post": new_post
+                })
+                save_to_db()
+                st.success("Сотрудник добавлен!")
+                st.rerun()
+            else:
+                st.error("Заполните все поля!")
+                
+    # Таблица штата
+    st.markdown("**Текущий штат:**")
+    if st.session_state.staff_roster:
+        df_staff = pd.DataFrame(st.session_state.staff_roster)
+        df_staff = df_staff.rename(columns={"full_name": "Полное ФИО", "short_name": "Короткое ФИО", "post": "Должность"})
+        
+        # Удаление сотрудника
+        to_delete = st.selectbox("Выберите сотрудника для увольнения:", [s["full_name"] for s in st.session_state.staff_roster])
+        if st.button("🚫 Удалить из штата"):
+            st.session_state.staff_roster = [s for s in st.session_state.staff_roster if s["full_name"] != to_delete]
+            # Также удаляем его смены из текущего месяца
+            for day in st.session_state.shifts:
+                if to_delete in st.session_state.shifts[day]:
+                    st.session_state.shifts[day].remove(to_delete)
+            save_to_db()
+            st.success(f"{to_delete} уволен.")
+            st.rerun()
+            
+        st.dataframe(df_staff, use_container_width=True)
+    else:
+        st.write("Штат пуст. Добавьте сотрудников.")
