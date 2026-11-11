@@ -46,8 +46,8 @@ MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Ма
 # ---------- ИНИЦИАЛИЗАЦИЯ ----------
 _defaults = {
     "active_month": "", "active_year": "", "current_id": None,
-    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_roster": [],
-    "rates": DEFAULT_RATES
+    "shifts": {}, "tonnage": {}, "subordinates": [], 
+    "staff_roster": [], "rates": DEFAULT_RATES
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -92,24 +92,61 @@ def load_initial_staff():
         })
     return res
 
-# ---------- БАЗА ДАННЫХ ----------
-def save_to_db():
-    if not supabase or not st.session_state.current_id: return
+# ---------- ГЛОБАЛЬНЫЕ НАСТРОЙКИ (РЕЕСТР И СТАВКИ) ----------
+def save_global_settings():
+    if not supabase: return
     try:
         payload = {
-            "shifts": st.session_state.shifts, 
-            "tonnage": st.session_state.tonnage, 
-            "subordinates": st.session_state.subordinates,
             "staff_roster": st.session_state.staff_roster,
             "rates": st.session_state.rates
         }
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
+        
+        # Проверяем, есть ли уже глобальные настройки
+        res = supabase.table("app_data").select("id").eq("id", "GLOBAL_SETTINGS").execute()
+        if res.data:
+            supabase.table("app_data").update(data).eq("id", "GLOBAL_SETTINGS").execute()
+        else:
+            data["id"] = "GLOBAL_SETTINGS"
+            supabase.table("app_data").insert(data).execute()
+    except Exception as e:
+        st.error(f"Ошибка сохранения глобальных настроек: {e}")
+
+def load_global_settings():
+    if not supabase: return
+    try:
+        res = supabase.table("app_data").select("*").eq("id", "GLOBAL_SETTINGS").execute()
+        if res.data and res.data[0]["pf_base64"]:
+            raw_json = base64.b64decode(res.data[0]["pf_base64"]).decode('utf-8')
+            payload = json.loads(raw_json)
+            st.session_state.staff_roster = payload.get("staff_roster", [])
+            st.session_state.rates = payload.get("rates", DEFAULT_RATES)
+        else:
+            # Если база пустая, берем из шаблона и создаем
+            st.session_state.staff_roster = load_initial_staff()
+            st.session_state.rates = DEFAULT_RATES
+            save_global_settings()
+    except Exception as e:
+        st.error(f"Ошибка загрузки глобальных настроек: {e}")
+
+# ---------- СОХРАНЕНИЕ МЕСЯЦА (ТОЛЬКО СМЕНЫ) ----------
+def save_month_to_db():
+    if not supabase or not st.session_state.current_id: return
+    try:
+        # В базе месяца храним ТОЛЬКО смены и тоннаж
+        payload = {
+            "shifts": st.session_state.shifts, 
+            "tonnage": st.session_state.tonnage, 
+            "subordinates": st.session_state.subordinates
+        }
+        json_str = json.dumps(payload, ensure_ascii=False)
+        data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
         supabase.table("app_data").update(data).eq("id", st.session_state.current_id).execute()
     except Exception as e:
-        st.error(f"Ошибка БД: {e}")
+        st.error(f"Ошибка сохранения месяца: {e}")
 
-def load_from_db(record_id):
+def load_month_from_db(record_id):
     if not supabase: return False
     try:
         res = supabase.table("app_data").select("*").eq("id", record_id).execute()
@@ -119,17 +156,12 @@ def load_from_db(record_id):
             st.session_state.shifts = payload.get("shifts", {})
             st.session_state.tonnage = payload.get("tonnage", {})
             st.session_state.subordinates = payload.get("subordinates", [])
-            st.session_state.staff_roster = payload.get("staff_roster", [])
-            st.session_state.rates = payload.get("rates", DEFAULT_RATES)
             
-            if not st.session_state.staff_roster:
-                st.session_state.staff_roster = load_initial_staff()
-                
             st.session_state.current_id = record_id
             st.session_state.active_month, st.session_state.active_year = record_id.split("_")
             return True
     except Exception as e:
-        st.error(f"Ошибка загрузки: {e}")
+        st.error(f"Ошибка загрузки месяца: {e}")
     return False
 
 # ---------- ГЕНЕРАЦИЯ ----------
@@ -146,7 +178,6 @@ def generate_and_download():
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_full_name in emps:
-                # Ищем лист в табеле по ФАМИЛИИ (первому слову)
                 surname = clean_name(emp_full_name.split()[0])
                 target_sheet = None
                 for s_name in wb_pf.sheetnames:
@@ -159,7 +190,6 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Заполняем лист "Итог" в табеле с учетом ставок
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -168,12 +198,10 @@ def generate_and_download():
                     sheet_name = str(fio_cell).strip()
                     if sheet_name in wb_pf.sheetnames:
                         shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
-                        
                         emp_info = next((s for s in st.session_state.staff_roster if s["full_name"] == sheet_name), None)
                         rate_val = 4500
                         if emp_info:
                             rate_val = get_rate_for(emp_info["post"], emp_info.get("grade", ""))
-                            
                         ws_it.cell(row=r, column=2, value=shifts_count * rate_val) 
                         ws_it.cell(row=r, column=3, value=shifts_count)
                 elif fio_cell and str(fio_cell).strip().lower() == "итого:":
@@ -183,7 +211,7 @@ def generate_and_download():
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # 2. ГРАФИК (xlsx) - ПОЛНАЯ СИНХРОНИЗАЦИЯ С РЕЕСТРОМ
+        # 2. ГРАФИК (xlsx) - СТРОГО ПО РЕЕСТРУ
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -191,35 +219,39 @@ def generate_and_download():
         try: ws_gr.title = f"{m_name} {y_val}"
         except: pass
         
-        # Ставим дни (1..31)
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
         
-        # Ищем начало блока "Отделение Полуфабрикатов"
         block_r = 4
-        for r in range(1, 120):
-            if "полуфабрикат" in str(ws_gr.cell(row=r, column=1).value or "").lower():
-                block_r = r
-                break
+        for r in range(1, 50):
+            for c in range(1, 4):
+                if "полуфабрикат" in str(ws_gr.cell(row=r, column=c).value or "").lower():
+                    block_r = r
+                    break
+            if block_r > 4: break
+            
+        last_emp_r = block_r + 1
+        while last_emp_r < 100 and ws_gr.cell(row=last_emp_r, column=2).value is not None:
+            last_emp_r += 1
+            
+        old_count = last_emp_r - (block_r + 1)
+        new_count = len(st.session_state.staff_roster)
         
-        # ОЧИЩАЕМ старый штат в графике (строки B и C) и все смены
-        for r in range(block_r + 1, block_r + 50):
-            ws_gr.cell(row=r, column=1, value=None)
-            ws_gr.cell(row=r, column=2, value=None)
-            ws_gr.cell(row=r, column=3, value=None)
-            for c in range(4, 36):
-                ws_gr.cell(row=r, column=c, value=None)
+        # Удаляем/добавляем строки под нужное количество
+        if old_count > new_count:
+            ws_gr.delete_rows(block_r + 1 + new_count, old_count - new_count)
+        elif new_count > old_count:
+            ws_gr.insert_rows(block_r + 1 + old_count, new_count - old_count)
 
-        # ЗАПИСЫВАЕМ актуальный реестр из вкладки "Кадры"
+        # Записываем актуальный глобальный штат
         for i, emp in enumerate(st.session_state.staff_roster):
             r = block_r + 1 + i
             ws_gr.cell(row=r, column=1, value=i + 1)
             ws_gr.cell(row=r, column=2, value=emp["full_name"])
             ws_gr.cell(row=r, column=3, value=emp["post"])
 
-            # Проставляем смены для этого сотрудника
             for day_str, emps in st.session_state.shifts.items():
                 if emp["full_name"] in emps:
                     day = int(day_str)
@@ -241,7 +273,7 @@ def generate_and_download():
                 break
                 
         if not tpl_sheet_name:
-            st.error("В файле tpl_sub.xlsm нет листа-шаблона! Оставьте один пустой лист.")
+            st.error("В файле tpl_sub.xlsm нет листа-шаблона!")
             return None
             
         for s in list(wb_sub.sheetnames):
@@ -315,6 +347,11 @@ def generate_and_download():
 
     return zip_buf.getvalue()
 
+# ---------- ЗАГРУЗКА ПРИ СТАРТЕ ----------
+if "initialized" not in st.session_state:
+    load_global_settings()
+    st.session_state["initialized"] = True
+
 # ---------- ИНТЕРФЕЙС ----------
 st.sidebar.header("🗓️ Текущий период")
 if st.session_state.active_month:
@@ -335,13 +372,13 @@ st.sidebar.markdown("---")
 if supabase:
     st.sidebar.subheader("📂 Открыть месяц")
     try:
-        res = supabase.table("app_data").select("id").execute()
+        res = supabase.table("app_data").select("id").neq("id", "GLOBAL_SETTINGS").execute()
         saved = [r["id"] for r in res.data]
         if saved:
             saved.sort(reverse=True)
             sel = st.sidebar.selectbox("Выберите месяц", saved)
             if st.sidebar.button("Загрузить"):
-                if load_from_db(sel):
+                if load_month_from_db(sel):
                     st.sidebar.success("Загружено!")
                     st.rerun()
     except: pass
@@ -374,19 +411,13 @@ with tab0:
                     st.session_state.active_month = new_month
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
-                    st.session_state.staff_roster = load_initial_staff()
-                    if not st.session_state.rates:
-                        st.session_state.rates = DEFAULT_RATES
                     
-                    empty_payload = json.dumps({
-                        "shifts": {}, "tonnage": {}, "subordinates": [], 
-                        "staff_roster": st.session_state.staff_roster,
-                        "rates": st.session_state.rates
-                    })
+                    # Сохраняем только пустые смены для нового месяца
+                    empty_payload = json.dumps({"shifts": {}, "tonnage": {}, "subordinates": []})
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
                     
-                    st.success("✅ Месяц создан!")
+                    st.success("✅ Месяц создан! Штат берется из глобального реестра.")
                     st.rerun()
             except Exception as e:
                 st.error(f"Ошибка: {e}")
@@ -421,7 +452,7 @@ with tab1:
             if tonnage > 0:
                 st.session_state.tonnage[day_str] = float(tonnage)
             
-            save_to_db()
+            save_month_to_db()
             st.success(f"Смена на {shift_date.strftime('%d.%m.%Y')} сохранена в базу!")
             st.rerun()
 
@@ -455,7 +486,7 @@ with tab2:
                     "post": post, "grade": grade,
                     "date": sub_date.strftime("%d.%m.%Y"), "amount": float(amount)
                 })
-                save_to_db()
+                save_month_to_db()
                 st.success("Подработка добавлена!")
                 st.rerun()
 
@@ -470,8 +501,8 @@ with tab2:
 
 # ================= TAB 3: СТАВКИ =================
 with tab3:
-    st.subheader("Справочник ставок")
-    st.info("Измените ставки в таблице ниже. Эти данные будут использоваться для расчета зарплаты в табеле.")
+    st.subheader("Глобальный справочник ставок")
+    st.info("Эти ставки применяются ко всем месяцам. Измените данные и нажмите «Сохранить».")
     
     df_rates = pd.DataFrame(st.session_state.rates)
     
@@ -487,7 +518,7 @@ with tab3:
         key="rates_editor"
     )
     
-    if st.button("💾 Сохранить ставки", type="primary"):
+    if st.button("💾 Сохранить глобальные ставки", type="primary"):
         new_rates = []
         for _, row in edited_rates.iterrows():
             if pd.notna(row["post"]) and str(row["post"]).strip() != "":
@@ -497,14 +528,14 @@ with tab3:
                     "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
                 })
         st.session_state.rates = new_rates
-        save_to_db()
-        st.success("✅ Ставки обновлены!")
+        save_global_settings()
+        st.success("✅ Ставки сохранены глобально!")
         st.rerun()
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
-    st.subheader("Управление штатом (Главный реестр)")
-    st.info("Дважды кликните по ячейке, чтобы изменить ФИО, должность или разряд. Именно этот список будет полностью формировать файл Графика.")
+    st.subheader("Глобальный реестр сотрудников (Штат)")
+    st.info("Этот список един для всех месяцев. Изменения здесь сразу влияют на генерацию всех файлов.")
     
     if st.session_state.staff_roster:
         df_staff = pd.DataFrame(st.session_state.staff_roster)
@@ -528,7 +559,7 @@ with tab4:
             key="staff_editor"
         )
         
-        if st.button("💾 Сохранить изменения в штате", type="primary"):
+        if st.button("💾 Сохранить глобальный штат", type="primary"):
             new_roster = []
             for _, row in edited_df.iterrows():
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
@@ -540,12 +571,12 @@ with tab4:
                     })
             
             st.session_state.staff_roster = new_roster
-            save_to_db()
-            st.success("✅ Штат успешно обновлен и сохранен в базу!")
+            save_global_settings()
+            st.success("✅ Глобальный штат сохранен! Теперь он применяется ко всем месяцам.")
             st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить стандартный список.")
         if st.button("Загрузить сотрудников из шаблона"):
             st.session_state.staff_roster = load_initial_staff()
-            save_to_db()
+            save_global_settings()
             st.rerun()
