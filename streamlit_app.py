@@ -29,14 +29,25 @@ TPL_SUB = "tpl_sub.xlsm"
 TPL_GRAPH = "tpl_graph.xlsx"
 TPL_SH = "tpl_sh.xlsx"
 
-# ---------- БАЗОВЫЕ НАСТРОЙКИ (Должности для выпадающего списка) ----------
+# ---------- БАЗОВЫЕ НАСТРОЙКИ ----------
 POSITIONS_LIST = ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"]
+DEFAULT_RATES = [
+    {"post": "Весовщик", "grade": "", "rate": 5000},
+    {"post": "Грузчик", "grade": "", "rate": 4300},
+    {"post": "Изготовитель мясных п/ф", "grade": "1 разряд", "rate": 3700},
+    {"post": "Изготовитель мясных п/ф", "grade": "2 разряд", "rate": 4500},
+    {"post": "Формовщик", "grade": "", "rate": 4500},
+    {"post": "Жиловщик", "grade": "", "rate": 4500},
+    {"post": "Оператор линии", "grade": "", "rate": 4500},
+    {"post": "Бригадир", "grade": "", "rate": 4500},
+]
 MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
 # ---------- ИНИЦИАЛИЗАЦИЯ ----------
 _defaults = {
     "active_month": "", "active_year": "", "current_id": None,
-    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_roster": []
+    "shifts": {}, "tonnage": {}, "subordinates": [], "staff_roster": [],
+    "rates": DEFAULT_RATES
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -52,8 +63,17 @@ def make_short_name(full_name):
         return f"{parts[0]} {parts[1][0]}."
     return parts[0] if parts else ""
 
+def get_rate_for(post, grade):
+    for r in st.session_state.rates:
+        if r["post"] == post and r["grade"] == grade:
+            return r["rate"]
+    # Если точного совпадения нет, ищем просто по должности
+    for r in st.session_state.rates:
+        if r["post"] == post:
+            return r["rate"]
+    return 4500
+
 def load_initial_staff():
-    """Если штат пустой, пробуем вытащить его из шаблона Табеля"""
     if not os.path.exists(TPL_PF): return []
     wb = load_workbook(io.BytesIO(open(TPL_PF, "rb").read()), keep_vba=True)
     res = []
@@ -69,7 +89,7 @@ def load_initial_staff():
             "full_name": sname, 
             "short_name": make_short_name(sname), 
             "post": post,
-            "grade": "—" # Добавили поле разряда
+            "grade": "—"
         })
     return res
 
@@ -81,7 +101,8 @@ def save_to_db():
             "shifts": st.session_state.shifts, 
             "tonnage": st.session_state.tonnage, 
             "subordinates": st.session_state.subordinates,
-            "staff_roster": st.session_state.staff_roster
+            "staff_roster": st.session_state.staff_roster,
+            "rates": st.session_state.rates # Сохраняем ставки
         }
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
@@ -100,6 +121,7 @@ def load_from_db(record_id):
             st.session_state.tonnage = payload.get("tonnage", {})
             st.session_state.subordinates = payload.get("subordinates", [])
             st.session_state.staff_roster = payload.get("staff_roster", [])
+            st.session_state.rates = payload.get("rates", DEFAULT_RATES) # Загружаем ставки
             
             if not st.session_state.staff_roster:
                 st.session_state.staff_roster = load_initial_staff()
@@ -130,7 +152,7 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # Заполняем лист "Итог" в табеле
+        # Заполняем лист "Итог" в табеле с учетом ставок
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -139,7 +161,14 @@ def generate_and_download():
                     sheet_name = str(fio_cell).strip()
                     if sheet_name in wb_pf.sheetnames:
                         shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
-                        ws_it.cell(row=r, column=2, value=shifts_count * 4500) 
+                        
+                        # Ищем ставку сотрудника
+                        emp_info = next((s for s in st.session_state.staff_roster if s["full_name"] == sheet_name), None)
+                        rate_val = 4500
+                        if emp_info:
+                            rate_val = get_rate_for(emp_info["post"], emp_info.get("grade", ""))
+                            
+                        ws_it.cell(row=r, column=2, value=shifts_count * rate_val) 
                         ws_it.cell(row=r, column=3, value=shifts_count)
                 elif fio_cell and str(fio_cell).strip().lower() == "итого:":
                     ws_it.cell(row=r, column=2, value=f"=SUM(B2:B{r-1})")
@@ -328,10 +357,14 @@ with tab0:
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
                     st.session_state.staff_roster = load_initial_staff()
+                    # Ставки переносим из текущей сессии (если их меняли) или берем дефолтные
+                    if not st.session_state.rates:
+                        st.session_state.rates = DEFAULT_RATES
                     
                     empty_payload = json.dumps({
                         "shifts": {}, "tonnage": {}, "subordinates": [], 
-                        "staff_roster": st.session_state.staff_roster
+                        "staff_roster": st.session_state.staff_roster,
+                        "rates": st.session_state.rates
                     })
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
@@ -354,7 +387,6 @@ with tab1:
         st.markdown("**Кого отметить?**")
         selected = {}
         for emp in st.session_state.staff_roster:
-            # Выводим должность и разряд, чтобы было понятно
             label = f"{emp['short_name']} — {emp['post']}"
             if emp.get('grade') and emp['grade'] != "—":
                 label += f" ({emp['grade']})"
@@ -422,7 +454,35 @@ with tab2:
 # ================= TAB 3: СТАВКИ =================
 with tab3:
     st.subheader("Справочник ставок")
-    st.info("Ставки задаются в коде программы. Если нужно их поменять, обратитесь к разработчику.")
+    st.info("Измените ставки в таблице ниже. Эти данные будут использоваться для расчета зарплаты в табеле.")
+    
+    df_rates = pd.DataFrame(st.session_state.rates)
+    
+    edited_rates = st.data_editor(
+        df_rates,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "post": st.column_config.TextColumn("Должность", required=True),
+            "grade": st.column_config.TextColumn("Разряд"),
+            "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=100, format="%d ₽")
+        },
+        key="rates_editor"
+    )
+    
+    if st.button("💾 Сохранить ставки", type="primary"):
+        new_rates = []
+        for _, row in edited_rates.iterrows():
+            if pd.notna(row["post"]) and str(row["post"]).strip() != "":
+                new_rates.append({
+                    "post": str(row["post"]).strip(),
+                    "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
+                    "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
+                })
+        st.session_state.rates = new_rates
+        save_to_db()
+        st.success("✅ Ставки обновлены!")
+        st.rerun()
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
@@ -430,10 +490,7 @@ with tab4:
     st.info("Дважды кликните по ячейке, чтобы изменить ФИО, должность или разряд. Внизу таблицы можно добавить новую строку.")
     
     if st.session_state.staff_roster:
-        # Конвертируем список в DataFrame
         df_staff = pd.DataFrame(st.session_state.staff_roster)
-        
-        # Переименовываем колонки для отображения
         df_staff = df_staff.rename(columns={
             "full_name": "Полное ФИО", 
             "short_name": "Короткое ФИО", 
@@ -441,10 +498,9 @@ with tab4:
             "grade": "Разряд"
         })
         
-        # Выводим интерактивный редактор
         edited_df = st.data_editor(
             df_staff,
-            num_rows="dynamic", # Позволяет добавлять и удалять строки
+            num_rows="dynamic",
             use_container_width=True,
             column_config={
                 "Полное ФИО": st.column_config.TextColumn(required=True),
@@ -455,11 +511,9 @@ with tab4:
             key="staff_editor"
         )
         
-        # Кнопка сохранения
         if st.button("💾 Сохранить изменения в штате", type="primary"):
             new_roster = []
             for _, row in edited_df.iterrows():
-                # Пропускаем полностью пустые строки
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
                     new_roster.append({
                         "full_name": str(row["Полное ФИО"]).strip(),
