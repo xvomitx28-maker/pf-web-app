@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 БЕЗОПАСНЫЙ ДИЗАЙН (CSS)
+# 🎨 ДИЗАЙН (Как было изначально)
 # ==========================================
 st.set_page_config(page_title="Учёт выработки", page_icon="🏭", layout="wide")
 
@@ -35,7 +35,7 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==========================================
-# 1. СЛОВАРИ ОТДЕЛОВ И ДОЛЖНОСТЕЙ
+# 1. СЛОВАРИ ОТДЕЛОВ И ДОЛЖНОСТЕЙ (БАЗА)
 # ==========================================
 DEPARTMENTS = {
     "pf": "Отделение Полуфабрикатов",
@@ -46,6 +46,7 @@ DEPARTMENTS = {
     "delicatessen": "Деликатесное отделение"
 }
 
+# Базовые должности (используются ТОЛЬКО если таблица Ставок пуста)
 POSITIONS_BY_DEPT = {
     "pf": ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"],
     "main_deboning": ["Обвальщик", "Жиловщик", "Весовщик", "Грузчик", "Бригадир"],
@@ -106,10 +107,19 @@ for k, v in _defaults.items():
         st.session_state[k] = v
 
 # ==========================================
-# 3. ХЕЛПЕРЫ И АВТОВОССТАНОВЛЕНИЕ
+# 3. ХЕЛПЕРЫ (ГЛАВНОЕ ОБНОВЛЕНИЕ ЗДЕСЬ)
 # ==========================================
 def get_current_positions():
-    return POSITIONS_BY_DEPT.get(st.session_state.current_dept, [])
+    """Динамически собирает уникальные должности из таблицы Ставок. Работает для ВСЕХ отделов."""
+    positions = []
+    for r in st.session_state.rates:
+        if r.get("post") and str(r["post"]).strip() not in positions:
+            positions.append(str(r["post"]).strip())
+            
+    # Защита: если таблица ставок пуста, берем базовый список, чтобы программа не упала
+    if not positions:
+        positions = POSITIONS_BY_DEPT.get(st.session_state.current_dept, ["Сотрудник"])
+    return positions
 
 def clean_name(name): return re.sub(r'[^а-яё]', '', str(name).lower())
 def make_short_name(full_name):
@@ -417,7 +427,6 @@ def generate_and_download():
         wb_sh = load_workbook(io.BytesIO(open(tpl_sh_name, "rb").read()))
         wb_sh.calculation.fullCalcOnLoad = True
         
-        # ЗДЕСЬ ИЗМЕНЕНИЕ: для деликатесов ищем лист "ДО"
         sh_sheet_map = {
             "pf": "ПФ", 
             "main_deboning": "Обвалка", 
