@@ -67,7 +67,6 @@ def get_rate_for(post, grade):
     for r in st.session_state.rates:
         if r["post"] == post and r["grade"] == grade:
             return r["rate"]
-    # Если точного совпадения нет, ищем просто по должности
     for r in st.session_state.rates:
         if r["post"] == post:
             return r["rate"]
@@ -102,7 +101,7 @@ def save_to_db():
             "tonnage": st.session_state.tonnage, 
             "subordinates": st.session_state.subordinates,
             "staff_roster": st.session_state.staff_roster,
-            "rates": st.session_state.rates # Сохраняем ставки
+            "rates": st.session_state.rates
         }
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
@@ -121,7 +120,7 @@ def load_from_db(record_id):
             st.session_state.tonnage = payload.get("tonnage", {})
             st.session_state.subordinates = payload.get("subordinates", [])
             st.session_state.staff_roster = payload.get("staff_roster", [])
-            st.session_state.rates = payload.get("rates", DEFAULT_RATES) # Загружаем ставки
+            st.session_state.rates = payload.get("rates", DEFAULT_RATES)
             
             if not st.session_state.staff_roster:
                 st.session_state.staff_roster = load_initial_staff()
@@ -147,8 +146,16 @@ def generate_and_download():
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_full_name in emps:
-                if emp_full_name in wb_pf.sheetnames:
-                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
+                # Ищем лист в табеле по ФАМИЛИИ (первому слову)
+                surname = clean_name(emp_full_name.split()[0])
+                target_sheet = None
+                for s_name in wb_pf.sheetnames:
+                    if clean_name(s_name.split()[0]) == surname:
+                        target_sheet = s_name
+                        break
+                if target_sheet:
+                    wb_pf[target_sheet].cell(row=day + 1, column=2, value=1)
+            
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
@@ -162,7 +169,6 @@ def generate_and_download():
                     if sheet_name in wb_pf.sheetnames:
                         shifts_count = sum(1 for d, emps in st.session_state.shifts.items() if sheet_name in emps)
                         
-                        # Ищем ставку сотрудника
                         emp_info = next((s for s in st.session_state.staff_roster if s["full_name"] == sheet_name), None)
                         rate_val = 4500
                         if emp_info:
@@ -177,7 +183,7 @@ def generate_and_download():
         buf_pf = io.BytesIO(); wb_pf.save(buf_pf)
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
-        # 2. ГРАФИК (xlsx)
+        # 2. ГРАФИК (xlsx) - ПОЛНАЯ СИНХРОНИЗАЦИЯ С РЕЕСТРОМ
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
         ws_gr = wb_gr.active
@@ -185,28 +191,41 @@ def generate_and_download():
         try: ws_gr.title = f"{m_name} {y_val}"
         except: pass
         
+        # Ставим дни (1..31)
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
         
+        # Ищем начало блока "Отделение Полуфабрикатов"
         block_r = 4
         for r in range(1, 120):
             if "полуфабрикат" in str(ws_gr.cell(row=r, column=1).value or "").lower():
-                block_r = r; break
+                block_r = r
+                break
         
-        for day_str, emps in st.session_state.shifts.items():
-            day = int(day_str)
-            col_idx = 3 + day
-            for emp_full_name in emps:
-                clean_surname = clean_name(emp_full_name)
-                for r in range(block_r + 1, block_r + 40):
-                    graph_fio = clean_name(ws_gr.cell(row=r, column=2).value or "")
-                    if clean_surname in graph_fio:
-                        post = next((s["post"] for s in st.session_state.staff_roster if s["full_name"] == emp_full_name), "")
-                        hours = 8 if post in ("Весовщик", "Грузчик") else 11
-                        ws_gr.cell(row=r, column=col_idx, value=hours)
-                        break
+        # ОЧИЩАЕМ старый штат в графике (строки B и C) и все смены
+        for r in range(block_r + 1, block_r + 50):
+            ws_gr.cell(row=r, column=1, value=None)
+            ws_gr.cell(row=r, column=2, value=None)
+            ws_gr.cell(row=r, column=3, value=None)
+            for c in range(4, 36):
+                ws_gr.cell(row=r, column=c, value=None)
+
+        # ЗАПИСЫВАЕМ актуальный реестр из вкладки "Кадры"
+        for i, emp in enumerate(st.session_state.staff_roster):
+            r = block_r + 1 + i
+            ws_gr.cell(row=r, column=1, value=i + 1)
+            ws_gr.cell(row=r, column=2, value=emp["full_name"])
+            ws_gr.cell(row=r, column=3, value=emp["post"])
+
+            # Проставляем смены для этого сотрудника
+            for day_str, emps in st.session_state.shifts.items():
+                if emp["full_name"] in emps:
+                    day = int(day_str)
+                    col_idx = 3 + day
+                    hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
+                    ws_gr.cell(row=r, column=col_idx, value=hours)
         
         buf_gr = io.BytesIO(); wb_gr.save(buf_gr)
         zf.writestr(f"ГРАФИК_{m_name}_{y_val}.xlsx", buf_gr.getvalue())
@@ -251,7 +270,6 @@ def generate_and_download():
         if tpl_sheet_name in wb_sub.sheetnames:
             del wb_sub[tpl_sheet_name]
         
-        # Заполняем Итог в подработчиках
         if "Итог" in wb_sub.sheetnames:
             ws_it = wb_sub["Итог"]
             itogo_row = 50
@@ -357,7 +375,6 @@ with tab0:
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
                     st.session_state.staff_roster = load_initial_staff()
-                    # Ставки переносим из текущей сессии (если их меняли) или берем дефолтные
                     if not st.session_state.rates:
                         st.session_state.rates = DEFAULT_RATES
                     
@@ -486,8 +503,8 @@ with tab3:
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
-    st.subheader("Управление штатом")
-    st.info("Дважды кликните по ячейке, чтобы изменить ФИО, должность или разряд. Внизу таблицы можно добавить новую строку.")
+    st.subheader("Управление штатом (Главный реестр)")
+    st.info("Дважды кликните по ячейке, чтобы изменить ФИО, должность или разряд. Именно этот список будет полностью формировать файл Графика.")
     
     if st.session_state.staff_roster:
         df_staff = pd.DataFrame(st.session_state.staff_roster)
