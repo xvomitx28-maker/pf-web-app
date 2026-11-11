@@ -232,16 +232,23 @@ def generate_and_download():
         if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
             del wb_pf[tpl_pf_name]
 
+        # Ставим смены и деньги в ежедневные ячейки
         for day_str, data in st.session_state.shifts.items():
             day = int(day_str)
             timesheet_emps = data.get("timesheet", [])
             for emp_full_name in timesheet_emps:
                 if emp_full_name in wb_pf.sheetnames:
-                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1)
+                    emp_info = next((e for e in st.session_state.staff_roster if e["full_name"] == emp_full_name), None)
+                    rate_val = get_rate_for(emp_info["post"], emp_info.get("grade", "")) if emp_info else 4500
+                    
+                    wb_pf[emp_full_name].cell(row=day + 1, column=2, value=1) # Выход
+                    wb_pf[emp_full_name].cell(row=day + 1, column=8, value=rate_val) # Итого
+                    wb_pf[emp_full_name].cell(row=day + 1, column=10, value=rate_val) # Сумма к выплате
             
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
+        # Лист "Итог"
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             for r in range(2, 50):
@@ -310,7 +317,6 @@ def generate_and_download():
                     cell = ws_gr.cell(row=r, column=col_idx, value=hours)
                     cell.fill = ORANGE_FILL
                     
-                    # ДОБАВЛЯЕМ ПРИМЕЧАНИЕ (КОММЕНТАРИЙ)
                     if dept_name:
                         comment_text = f"Подработка: {dept_name}"
                     else:
@@ -354,10 +360,15 @@ def generate_and_download():
                 for r in range(2, 33): 
                     new_ws.cell(row=r, column=2).value = None
                     new_ws.cell(row=r, column=3).value = None
+                    new_ws.cell(row=r, column=8).value = None
+                    new_ws.cell(row=r, column=10).value = None
             
             day = int(sub["date"].split(".")[0])
-            wb_sub[title].cell(row=day + 1, column=2, value=1)
-            wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"])
+            
+            wb_sub[title].cell(row=day + 1, column=2, value=1) # Смена
+            wb_sub[title].cell(row=day + 1, column=3, value=sub["amount"]) # Ставка
+            wb_sub[title].cell(row=day + 1, column=8, value=sub["amount"]) # Итого
+            wb_sub[title].cell(row=day + 1, column=10, value=sub["amount"]) # Сумма к выплате
             
             if title not in subs_by_fio:
                 subs_by_fio[title] = {"amount": 0.0, "shifts": 0}
@@ -582,8 +593,11 @@ with tab2:
         c1, c2 = st.columns(2)
         with c1:
             fio = st.text_input("ФИО подработчика (например, Иванов И.)")
-            post = st.text_input("Должность", value="Изготовитель мясных п/ф")
-            grade = st.text_input("Разряд", value="")
+            post = st.selectbox("Должность", POSITIONS_LIST)
+            
+            available_grades = ["—"] + [r["grade"] for r in st.session_state.rates if r["post"] == post and r["grade"]]
+            grade = st.selectbox("Разряд", available_grades) if len(available_grades) > 1 else "—"
+            
         with c2:
             sub_date = st.date_input("Дата")
             amount = st.number_input("Сумма (руб)", min_value=0.0, value=4500.0, step=100.0)
