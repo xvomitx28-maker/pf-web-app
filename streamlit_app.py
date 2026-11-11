@@ -5,9 +5,23 @@ import datetime
 import calendar
 import zipfile
 import os
+import base64
 from openpyxl import load_workbook
+from supabase import create_client, Client
 
 st.set_page_config(page_title="Учёт ПФ", page_icon="📊", layout="wide")
+
+# ---------- ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ----------
+@st.cache_resource
+def init_connection():
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        return None
+
+supabase = init_connection()
 
 # ---------- НАЗВАНИЯ ШАБЛОНОВ НА GITHUB ----------
 TPL_PF = "tpl_pf.xlsm"
@@ -30,7 +44,9 @@ _defaults = {
     "staff_meta": {},
     "pf_bytes": None, "sub_bytes": None, "graph_bytes": None, "sh_bytes": None,
     "pf_name": "Полуфабрикаты.xlsm", "sub_name": "Подработчики_ПФ.xlsm",
-    "graph_name": "ГРАФИК.xlsx", "sh_name": "Шашина.xlsx"
+    "graph_name": "ГРАФИК.xlsx", "sh_name": "Шашина.xlsx",
+    "active_month": "", "active_year": "",
+    "current_record_id": None
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -86,41 +102,83 @@ def read_staff(wb):
             result.append({"sheet": sname, "fio": sname, "post": post, "grade": grade, "rate": rate})
     return result
 
-# ---------- SIDEBAR: ФАЙЛЫ ----------
-st.sidebar.header("📁 Текущие файлы")
-st.sidebar.caption("Если вы сформировали месяц на первой вкладке, файлы загрузятся автоматически. Либо загрузите их вручную.")
+# ---------- ФУНКЦИИ БАЗЫ ДАННЫХ ----------
+def save_to_db():
+    if not supabase or not st.session_state.current_record_id: return
+    try:
+        data = {
+            "pf_base64": base64.b64encode(st.session_state.pf_bytes).decode("utf-8") if st.session_state.pf_bytes else None,
+            "sub_base64": base64.b64encode(st.session_state.sub_bytes).decode("utf-8") if st.session_state.sub_bytes else None,
+            "graph_base64": base64.b64encode(st.session_state.graph_bytes).decode("utf-8") if st.session_state.graph_bytes else None,
+            "sh_base64": base64.b64encode(st.session_state.sh_bytes).decode("utf-8") if st.session_state.sh_bytes else None,
+        }
+        supabase.table("app_data").update(data).eq("id", st.session_state.current_record_id).execute()
+    except Exception as e:
+        st.error(f"Ошибка сохранения в базу: {e}")
 
-up_pf = st.sidebar.file_uploader("Табель (.xlsm)", type=["xlsm"])
-if up_pf and st.sidebar.button("↪ Загрузить Табель"):
-    st.session_state.pf_bytes = up_pf.read(); st.session_state.pf_name = up_pf.name
-    st.sidebar.success("Табель готов")
+def load_from_db(record_id):
+    if not supabase: return False
+    try:
+        res = supabase.table("app_data").select("*").eq("id", record_id).execute()
+        if res.data:
+            row = res.data[0]
+            st.session_state.pf_bytes = base64.b64decode(row["pf_base64"]) if row["pf_base64"] else None
+            st.session_state.sub_bytes = base64.b64decode(row["sub_base64"]) if row["sub_base64"] else None
+            st.session_state.graph_bytes = base64.b64decode(row["graph_base64"]) if row["graph_base64"] else None
+            st.session_state.sh_bytes = base64.b64decode(row["sh_base64"]) if row["sh_base64"] else None
+            st.session_state.current_record_id = record_id
+            st.session_state.active_month, st.session_state.active_year = record_id.split("_")
+            return True
+    except Exception as e:
+        st.error(f"Ошибка загрузки из базы: {e}")
+    return False
 
-up_graph = st.sidebar.file_uploader("График (.xlsx)", type=["xlsx"])
-if up_graph and st.sidebar.button("↪ Загрузить График"):
-    st.session_state.graph_bytes = up_graph.read(); st.session_state.graph_name = up_graph.name
-    st.sidebar.success("График готов")
-
-up_sub = st.sidebar.file_uploader("Подработчики (.xlsm)", type=["xlsm"])
-if up_sub and st.sidebar.button("↪ Загрузить Подработчиков"):
-    st.session_state.sub_bytes = up_sub.read(); st.session_state.sub_name = up_sub.name
-    st.sidebar.success("Подработчики готовы")
-
-up_sh = st.sidebar.file_uploader("Ведомость Шашиной (.xlsx)", type=["xlsx"])
-if up_sh and st.sidebar.button("↪ Загрузить Ведомость"):
-    st.session_state.sh_bytes = up_sh.read(); st.session_state.sh_name = up_sh.name
-    st.sidebar.success("Ведомость готова")
+# ---------- SIDEBAR ----------
+st.sidebar.header("🗓️ Текущий период")
+if st.session_state.active_month and st.session_state.active_year:
+    st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
+    st.sidebar.caption("Все изменения автоматически сохраняются в базе.")
+    
+    zip_prog_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_prog_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        if st.session_state.pf_bytes: zf.writestr(st.session_state.pf_name, st.session_state.pf_bytes)
+        if st.session_state.graph_bytes: zf.writestr(st.session_state.graph_name, st.session_state.graph_bytes)
+        if st.session_state.sub_bytes: zf.writestr(st.session_state.sub_name, st.session_state.sub_bytes)
+        if st.session_state.sh_bytes: zf.writestr(st.session_state.sh_name, st.session_state.sh_bytes)
+    
+    st.sidebar.download_button(
+        label="⬇️ Скачать готовые файлы (ZIP)", 
+        data=zip_prog_buf.getvalue(), 
+        file_name=f"Итоги_{st.session_state.active_month}_{st.session_state.active_year}.zip", 
+        mime="application/zip",
+        type="primary"
+    )
+else:
+    st.sidebar.warning("### Месяц не выбран\nСоздайте новый или выберите старый.")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("⬇️ Скачать результат")
-if st.session_state.pf_bytes: st.sidebar.download_button("Скачать Табель", data=st.session_state.pf_bytes, file_name=st.session_state.pf_name, use_container_width=True)
-if st.session_state.graph_bytes: st.sidebar.download_button("Скачать График", data=st.session_state.graph_bytes, file_name=st.session_state.graph_name, use_container_width=True)
-if st.session_state.sub_bytes: st.sidebar.download_button("Скачать Подработчиков", data=st.session_state.sub_bytes, file_name=st.session_state.sub_name, use_container_width=True)
-if st.session_state.sh_bytes: st.sidebar.download_button("Скачать Ведомость", data=st.session_state.sh_bytes, file_name=st.session_state.sh_name, use_container_width=True)
-
-st.sidebar.warning("⚠️ Файлы живут в сессии. Скачивайте их перед закрытием вкладки!")
+if supabase:
+    st.sidebar.subheader("📂 Открыть сохраненный месяц")
+    try:
+        res = supabase.table("app_data").select("id").execute()
+        saved_months = [row["id"] for row in res.data]
+        if saved_months:
+            saved_months.sort(reverse=True)
+            selected_month = st.sidebar.selectbox("Выберите месяц", saved_months)
+            if st.sidebar.button("Загрузить в программу"):
+                if load_from_db(selected_month):
+                    st.sidebar.success("Данные загружены!")
+                    st.rerun()
+        else:
+            st.sidebar.caption("Сохраненных месяцев пока нет.")
+    except Exception as e:
+        st.sidebar.error(f"Ошибка БД: {e}")
 
 # ---------- MAIN ----------
-st.title("📊 Учёт выработки — Отделение Полуфабрикатов")
+if st.session_state.active_month:
+    st.title(f"📊 Отделение Полуфабрикатов — {st.session_state.active_month} {st.session_state.active_year}")
+else:
+    st.title("📊 Учёт выработки — Отделение Полуфабрикатов")
 
 tab0, tab1, tab2, tab3, tab4 = st.tabs(
     ["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки и разряды", "👥 Кадры"]
@@ -129,7 +187,6 @@ tab0, tab1, tab2, tab3, tab4 = st.tabs(
 # ================= TAB 0: СОЗДАНИЕ МЕСЯЦА =================
 with tab0:
     st.subheader("Формирование нового месяца")
-    st.info("Программа возьмет шаблоны, зашитые в нее, очистит их и автоматически загрузит в приложение для работы.")
     
     c1, c2 = st.columns(2)
     with c1:
@@ -137,18 +194,22 @@ with tab0:
     with c2:
         new_year = st.number_input("Год", min_value=2024, max_value=2035, value=datetime.date.today().year)
 
-    if st.button("✨ Сформировать файлы", type="primary"):
+    if st.button("✨ Создать месяц и сохранить в базу", type="primary"):
+        record_id = f"{new_month}_{new_year}"
         if not all([os.path.exists(TPL_PF), os.path.exists(TPL_SUB), os.path.exists(TPL_GRAPH), os.path.exists(TPL_SH)]):
-            st.error(f"❌ Файлы шаблонов не найдены! Убедитесь, что вы загрузили на GitHub файлы: {TPL_PF}, {TPL_SUB}, {TPL_GRAPH}, {TPL_SH}.")
+            st.error("❌ Файлы шаблонов не найдены на GitHub.")
+        elif not supabase:
+            st.error("❌ Нет подключения к базе данных. Проверьте настройки Secrets.")
         else:
-            with st.spinner("Обработка шаблонов..."):
+            with st.spinner("Создаем файлы..."):
                 try:
-                    m_idx = MONTHS_RU.index(new_month) + 1
-                    num_days = calendar.monthrange(new_year, m_idx)[1]
-                    zip_buf = io.BytesIO()
-                    
-                    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                        # 1. Табель ПФ
+                    existing = supabase.table("app_data").select("id").eq("id", record_id).execute()
+                    if existing.data:
+                        st.error(f"❌ Месяц {record_id} уже существует! Выберите его в боковой панели.")
+                    else:
+                        m_idx = MONTHS_RU.index(new_month) + 1
+                        num_days = calendar.monthrange(new_year, m_idx)[1]
+                        
                         wb_pf = load_wb(open(TPL_PF, "rb").read())
                         if "рубкг" in wb_pf.sheetnames:
                             ws_rub = wb_pf["рубкг"]
@@ -163,12 +224,9 @@ with tab0:
                                 ws_e = wb_pf[sname]
                                 for r in range(2, 33):
                                     for c in range(2, 8): ws_e.cell(row=r, column=c).value = None
-                        pf_bytes = wb_to_bytes(wb_pf)
-                        zf.writestr(f"Полуфабрикаты_{new_month}_{new_year}.xlsm", pf_bytes)
-                        st.session_state.pf_bytes = pf_bytes
+                        st.session_state.pf_bytes = wb_to_bytes(wb_pf)
                         st.session_state.pf_name = f"Полуфабрикаты_{new_month}_{new_year}.xlsm"
 
-                        # 2. Подработчики ПФ
                         wb_sub = load_wb(open(TPL_SUB, "rb").read())
                         for sname in wb_sub.sheetnames:
                             if sname != "Итог":
@@ -176,12 +234,9 @@ with tab0:
                                 for r in range(2, 33):
                                     ws_s.cell(row=r, column=2).value = None
                                     ws_s.cell(row=r, column=3).value = None
-                        sub_bytes = wb_to_bytes(wb_sub)
-                        zf.writestr(f"Подработчики_Полуфабрикаты_{new_month}_{new_year}.xlsm", sub_bytes)
-                        st.session_state.sub_bytes = sub_bytes
-                        st.session_state.sub_name = f"Подработчики_Полуфабрикаты_{new_month}_{new_year}.xlsm"
+                        st.session_state.sub_bytes = wb_to_bytes(wb_sub)
+                        st.session_state.sub_name = f"Подработчики_{new_month}_{new_year}.xlsm"
 
-                        # 3. График ПФ
                         wb_graph = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
                         ws_gr = wb_graph.active
                         try: ws_gr.title = f"{new_month} {new_year}"
@@ -201,12 +256,9 @@ with tab0:
                                 if cell_d.value is not None and not str(cell_d.value).startswith('='):
                                     cell_d.value = None
                         buf_graph = io.BytesIO(); wb_graph.save(buf_graph)
-                        graph_bytes = buf_graph.getvalue()
-                        zf.writestr(f"ГРАФИК Полуфабрикаты_{new_month}_{new_year}.xlsx", graph_bytes)
-                        st.session_state.graph_bytes = graph_bytes
-                        st.session_state.graph_name = f"ГРАФИК Полуфабрикаты_{new_month}_{new_year}.xlsx"
+                        st.session_state.graph_bytes = buf_graph.getvalue()
+                        st.session_state.graph_name = f"ГРАФИК_{new_month}_{new_year}.xlsx"
 
-                        # 4. Шашина
                         wb_sh = load_workbook(io.BytesIO(open(TPL_SH, "rb").read()))
                         for sname in wb_sh.sheetnames:
                             ws_s = wb_sh[sname]
@@ -215,28 +267,36 @@ with tab0:
                                     cell = ws_s.cell(row=r, column=c)
                                     if cell.value is not None and not str(cell.value).startswith('='): cell.value = None
                         buf_sh = io.BytesIO(); wb_sh.save(buf_sh)
-                        sh_bytes = buf_sh.getvalue()
-                        zf.writestr(f"ПОДРАБОТКИ ДЛЯ 1С (Шашина И.В.)_{new_month}_{new_year}.xlsx", sh_bytes)
-                        st.session_state.sh_bytes = sh_bytes
-                        st.session_state.sh_name = f"ПОДРАБОТКИ ДЛЯ 1С (Шашина И.В.)_{new_month}_{new_year}.xlsx"
+                        st.session_state.sh_bytes = buf_sh.getvalue()
+                        st.session_state.sh_name = f"Шашина_{new_month}_{new_year}.xlsx"
 
-                    st.success(f"✅ Файлы на {new_month} {new_year} сформированы и **автоматически загружены в приложение!** Можете переходить на другие вкладки. Скачать ZIP-архив можно кнопкой ниже.")
-                    st.download_button(label="⬇️ Скачать ZIP-архив со всеми файлами", data=zip_buf.getvalue(), file_name=f"Архив_{new_month}_{new_year}.zip", mime="application/zip")
+                        st.session_state.active_month = new_month
+                        st.session_state.active_year = str(new_year)
+                        st.session_state.current_record_id = record_id
+                        
+                        # Сохраняем в БД
+                        data = {
+                            "id": record_id,
+                            "pf_base64": base64.b64encode(st.session_state.pf_bytes).decode("utf-8"),
+                            "sub_base64": base64.b64encode(st.session_state.sub_bytes).decode("utf-8"),
+                            "graph_base64": base64.b64encode(st.session_state.graph_bytes).decode("utf-8"),
+                            "sh_base64": base64.b64encode(st.session_state.sh_bytes).decode("utf-8"),
+                        }
+                        supabase.table("app_data").insert(data).execute()
+                        
+                        st.success(f"✅ Месяц {new_month} {new_year} создан и сохранен в базу!")
+                        st.rerun()
                 except Exception as e:
-                    st.error(f"Ошибка при генерации: {e}")
+                    st.error(f"Ошибка: {e}")
 
 
 # ================= TAB 1: ТАБЕЛЬ СМЕН =================
 with tab1:
     if st.session_state.pf_bytes is None:
-        st.info("👈 Сформируйте месяц на первой вкладке или загрузите рабочие файлы в боковой панели, чтобы начать работу.")
+        st.info("👈 Создайте или загрузите месяц в боковой панели.")
     else:
-        try:
-            wb_pf = load_wb(st.session_state.pf_bytes)
-            wb_graph = load_workbook(io.BytesIO(st.session_state.graph_bytes)) if st.session_state.graph_bytes else None
-        except Exception as e:
-            st.error(f"Ошибка чтения файлов: {e}")
-            st.stop()
+        wb_pf = load_wb(st.session_state.pf_bytes)
+        wb_graph = load_workbook(io.BytesIO(st.session_state.graph_bytes)) if st.session_state.graph_bytes else None
             
         staff = read_staff(wb_pf)
         st.subheader("Отметка смен")
@@ -261,7 +321,6 @@ with tab1:
             if tonnage > 0 and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=float(tonnage))
                 
-            # --- СИНХРОНИЗАЦИЯ С ГРАФИКОМ ---
             if wb_graph:
                 ws_gr = wb_graph.active
                 day_col = None
@@ -274,7 +333,6 @@ with tab1:
                     for r in range(1, 120):
                         if "полуфабрикат" in str(ws_gr.cell(row=r, column=1).value or "").lower():
                             block_r = r; break
-                    
                     for sname, checked in selected.items():
                         if not checked: continue
                         surname = sname.split()[0].lower()
@@ -288,21 +346,18 @@ with tab1:
                 st.session_state.graph_bytes = wb_to_bytes(wb_graph)
 
             st.session_state.pf_bytes = wb_to_bytes(wb_pf)
-            st.success(f"Отмечено {n} смен на {shift_date.strftime('%d.%m.%Y')} в Табеле и Графике.")
+            save_to_db()
+            st.success(f"Отмечено {n} смен на {shift_date.strftime('%d.%m.%Y')} (Сохранено в базу).")
             st.rerun()
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
 with tab2:
     st.subheader("Внесение подработки")
     if st.session_state.sub_bytes is None or st.session_state.sh_bytes is None:
-        st.info("👈 Сформируйте месяц на первой вкладке или загрузите Подработчиков и Ведомость Шашиной в боковой панели.")
+        st.info("👈 Создайте или загрузите месяц в боковой панели.")
     else:
-        try:
-            wb_sub = load_wb(st.session_state.sub_bytes)
-            wb_sh = load_workbook(io.BytesIO(st.session_state.sh_bytes))
-        except Exception as e:
-            st.error(f"Ошибка чтения файлов: {e}")
-            st.stop()
+        wb_sub = load_wb(st.session_state.sub_bytes)
+        wb_sh = load_workbook(io.BytesIO(st.session_state.sh_bytes))
             
         c1, c2 = st.columns(2)
         with c1:
@@ -351,7 +406,8 @@ with tab2:
                     buf_sh = io.BytesIO(); wb_sh.save(buf_sh)
                     st.session_state.sh_bytes = buf_sh.getvalue()
 
-                st.success(f"Подработка {fio_clean} внесена в оба файла. Скачайте их в боковой панели.")
+                save_to_db()
+                st.success(f"Подработка {fio_clean} внесена (Сохранено в базу).")
                 st.rerun()
 
 # ================= TAB 3: СТАВКИ И РАЗРЯДЫ =================
@@ -363,7 +419,7 @@ with tab3:
 
     if st.button("💾 Применить к табелю", type="primary"):
         if st.session_state.pf_bytes is None:
-            st.error("Сначала сформируйте или загрузите Табель.")
+            st.error("Сначала создайте Табель.")
         else:
             new_rates = []
             for row in edited.to_dict("records"):
@@ -380,14 +436,15 @@ with tab3:
                     for r in range(2, 33): ws.cell(row=r, column=3, value=rt)
                     updated += 1
             st.session_state.pf_bytes = wb_to_bytes(wb_pf)
-            st.success(f"Ставки обновлены в Табеле. Обновлено листов: {updated}.")
+            save_to_db()
+            st.success(f"Ставки обновлены в Табеле (Сохранено в базу). Обновлено листов: {updated}.")
             st.rerun()
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
     st.subheader("Приём сотрудника")
     if st.session_state.pf_bytes is None:
-        st.info("👈 Сначала сформируйте или загрузите Табель.")
+        st.info("Сначала создайте Табель.")
     else:
         c1, c2, c3 = st.columns(3)
         with c1: hire_fio = st.text_input("ФИО нового сотрудника", key="hire_fio")
@@ -417,7 +474,8 @@ with tab4:
                         new_ws.cell(row=r, column=3, value=hire_rate)
                     st.session_state.staff_meta[title] = {"post": hire_post, "grade": hire_grade}
                     st.session_state.pf_bytes = wb_to_bytes(wb_pf)
-                    st.success(f"Сотрудник {fio_clean} принят.")
+                    save_to_db()
+                    st.success(f"Сотрудник {fio_clean} принят (Сохранено в базу).")
                     st.rerun()
 
         st.markdown("---")
@@ -434,7 +492,8 @@ with tab4:
                     if fire_fio in st.session_state.staff_meta:
                         st.session_state.staff_meta[new_title] = st.session_state.staff_meta.pop(fire_fio)
                     st.session_state.pf_bytes = wb_to_bytes(wb_pf)
-                    st.success(f"{fire_fio} уволен.")
+                    save_to_db()
+                    st.success(f"{fire_fio} уволен (Сохранено в базу).")
                     st.rerun()
         else:
             st.caption("Нет активных сотрудников")
