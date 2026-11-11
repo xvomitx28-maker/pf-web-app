@@ -180,28 +180,34 @@ def generate_and_download():
                     tpl_pf_name = s_name
                     break
 
-        # 1.2 Полностью удаляем старые карточки (кроме Итог и рубкг)
-        for s_name in list(wb_pf.sheetnames):
-            if s_name not in ("Итог", "рубкг"):
-                del wb_pf[s_name]
+        # 1.2 Полностью удаляем старые карточки, НО ОСТАВЛЯЕМ наш образец (tpl_pf_name)
+        if tpl_pf_name:
+            for s_name in list(wb_pf.sheetnames):
+                if s_name not in ("Итог", "рубкг", tpl_pf_name):
+                    del wb_pf[s_name]
 
         # 1.3 Создаем новые карточки строго по реестру
         for emp in st.session_state.staff_roster:
             name = emp["full_name"]
             rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
             
-            if tpl_pf_name:
-                new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
-                new_ws.title = name
-                # Очищаем от старых смен и ставим индивидуальную ставку
-                for r in range(2, 33):
-                    new_ws.cell(row=r, column=2).value = None # Смены
-                    new_ws.cell(row=r, column=3).value = rate_val # Ставка (Колонка C)
-                    for c in [4, 5, 6, 7, 8, 9, 10, 11]: # Очищаем остальные колонки
-                        if new_ws.cell(row=r, column=c).data_type != 'f':
-                            new_ws.cell(row=r, column=c).value = None
+            if name not in wb_pf.sheetnames:
+                if tpl_pf_name and tpl_pf_name in wb_pf.sheetnames:
+                    new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_name])
+                    new_ws.title = name
+                    # Очищаем от старых смен и ставим индивидуальную ставку
+                    for r in range(2, 33):
+                        new_ws.cell(row=r, column=2).value = None # Смены
+                        new_ws.cell(row=r, column=3).value = rate_val # Ставка (Колонка C)
+                        for c in [4, 5, 6, 7, 8, 9, 10, 11]: # Очищаем остальные колонки
+                            if new_ws.cell(row=r, column=c).data_type != 'f':
+                                new_ws.cell(row=r, column=c).value = None
 
-        # 1.4 Ставим смены в созданные карточки
+        # 1.4 Если "Вакансия" (или другой образец) не входит в реестр, удаляем её
+        if tpl_pf_name in wb_pf.sheetnames and not any(e["full_name"] == tpl_pf_name for e in st.session_state.staff_roster):
+            del wb_pf[tpl_pf_name]
+
+        # 1.5 Ставим смены в созданные карточки
         for day_str, emps in st.session_state.shifts.items():
             day = int(day_str)
             for emp_full_name in emps:
@@ -211,7 +217,7 @@ def generate_and_download():
             if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                 wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
         
-        # 1.5 Пересобираем лист "Итог" с нуля
+        # 1.6 Пересобираем лист "Итог" с нуля
         if "Итог" in wb_pf.sheetnames:
             ws_it = wb_pf["Итог"]
             
