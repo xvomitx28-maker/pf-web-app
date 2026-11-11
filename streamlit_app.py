@@ -56,6 +56,7 @@ MONTHS_RU = ["Январь", "Февраль", "Март", "Апрель", "Ма
 
 # Оранжевая заливка для подработчиков в графике
 ORANGE_FILL = PatternFill(start_color="FFA500", end_color="FFA500", fill_type="solid")
+NO_FILL = PatternFill(fill_type=None) # Пустая заливка (белая/прозрачная)
 
 # ==========================================
 # 4. ИНИЦИАЛИЗАЦИЯ СЕССИИ
@@ -275,7 +276,7 @@ def generate_and_download():
         zf.writestr(f"Полуфабрикаты_{m_name}_{y_val}.xlsm", buf_pf.getvalue())
 
         # ---------------------------------------------------------
-        # 7.2. ГРАФИК (xlsx) - БЕЗ ЖЕЛТЫХ КОЛОНОК
+        # 7.2. ГРАФИК (xlsx) - ОЧИЩАЕМ ЖЕЛТЫЙ ЦВЕТ
         # ---------------------------------------------------------
         wb_gr = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
         wb_gr.calculation.fullCalcOnLoad = True
@@ -288,9 +289,13 @@ def generate_and_download():
         m_idx = MONTHS_RU.index(m_name) + 1
         num_days = calendar.monthrange(int(y_val), m_idx)[1]
         
-        # Ставим дни
+        # Ставим дни и принудительно убираем желтую заливку в шапке (строки 1, 2, 3)
         for d in range(1, num_days + 1):
             ws_gr.cell(row=2, column=3 + d, value=d)
+            
+            for r_idx in [1, 2, 3]:
+                cell_header = ws_gr.cell(row=r_idx, column=3 + d)
+                cell_header.fill = NO_FILL # Делаем прозрачным
             
         # Ищем колонку ИТОГО (динамически)
         itogo_col = None
@@ -325,7 +330,7 @@ def generate_and_download():
             for c_idx in range(4, 3 + num_days + 1):
                 cell_to_clear = ws_gr.cell(row=r, column=c_idx)
                 cell_to_clear.value = None
-                cell_to_clear.fill = PatternFill(fill_type=None) # Делаем ячейку прозрачной/белой
+                cell_to_clear.fill = NO_FILL 
                 cell_to_clear.comment = None
 
             # СТАВИМ НОВЫЕ СМЕНЫ
@@ -340,7 +345,7 @@ def generate_and_download():
                 if emp["full_name"] in graph_only_dict:
                     dept_name = graph_only_dict[emp["full_name"]]
                     cell = ws_gr.cell(row=r, column=col_idx, value=hours)
-                    cell.fill = ORANGE_FILL # Оранжевый только для подработки
+                    cell.fill = ORANGE_FILL 
                     
                     if dept_name:
                         comment_text = f"Подработка: {dept_name}"
