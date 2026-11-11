@@ -205,12 +205,11 @@ with tab0:
                 try:
                     existing = supabase.table("app_data").select("id").eq("id", record_id).execute()
                     if existing.data:
-                        st.error(f"❌ Месяц {record_id} уже существует! Удалите его из базы Supabase и попробуйте снова.")
+                        st.error(f"❌ Месяц {record_id} уже существует! Удалите его из базы Supabase (Table Editor) и попробуйте снова.")
                     else:
                         m_idx = MONTHS_RU.index(new_month) + 1
                         num_days = calendar.monthrange(new_year, m_idx)[1]
                         
-                        # --- ИСПРАВЛЕНИЕ 1: Не стираем формулы в табеле ---
                         wb_pf = load_wb(open(TPL_PF, "rb").read())
                         if "рубкг" in wb_pf.sheetnames:
                             ws_rub = wb_pf["рубкг"]
@@ -224,11 +223,9 @@ with tab0:
                             if sname not in ["Итог", "рубкг"] and not sname.startswith("[Уволен]"):
                                 ws_e = wb_pf[sname]
                                 for r in range(2, 33):
-                                    # Очищаем только столбцы выходов и доп. полей (2, 4, 5, 6, 7). Столбец 3 (ставку) не трогаем.
                                     for c in [2, 4, 5, 6, 7]: 
                                         cell = ws_e.cell(row=r, column=c)
-                                        if cell.data_type != 'f': # Если это не формула
-                                            cell.value = None
+                                        if cell.data_type != 'f': cell.value = None
                         st.session_state.pf_bytes = wb_to_bytes(wb_pf)
                         st.session_state.pf_name = f"Полуфабрикаты_{new_month}_{new_year}.xlsm"
 
@@ -243,7 +240,6 @@ with tab0:
                         st.session_state.sub_bytes = wb_to_bytes(wb_sub)
                         st.session_state.sub_name = f"Подработчики_{new_month}_{new_year}.xlsm"
 
-                        # --- ИСПРАВЛЕНИЕ 2: Не стираем формулы в графике ---
                         wb_graph = load_workbook(io.BytesIO(open(TPL_GRAPH, "rb").read()))
                         ws_gr = wb_graph.active
                         try: ws_gr.title = f"{new_month} {new_year}"
@@ -306,6 +302,19 @@ with tab1:
         wb_graph = load_workbook(io.BytesIO(st.session_state.graph_bytes)) if st.session_state.graph_bytes else None
             
         staff = read_staff(wb_pf)
+        
+        # --- БЛОК ОТЛАДКИ ---
+        with st.expander("🛠️ Проверка чтения файлов (Отладка)"):
+            st.write(f"Найдено листов (сотрудников): **{len(staff)}**")
+            if len(staff) > 0:
+                st.write("Первые три сотрудника:")
+                for s in staff[:3]:
+                    st.write(f"- Лист: `{s['sheet']}`, ФИО: `{s['fio']}`, Должность: `{s['post']}`")
+            if wb_graph:
+                st.write("График прочитан успешно.")
+            else:
+                st.write("⚠️ График НЕ прочитан!")
+
         st.subheader("Отметка смен")
         c1, c2 = st.columns(2)
         with c1: shift_date = st.date_input("Дата смены", datetime.date.today(), key="shift_date")
@@ -330,7 +339,6 @@ with tab1:
                 
             if wb_graph:
                 ws_gr = wb_graph.active
-                # --- ИСПРАВЛЕНИЕ 3: Ищем дни в строках 2, 3 и 1 (в вашем шаблоне они во 2-й строке) ---
                 day_col = None
                 for r_check in [2, 3, 1]:
                     for c_idx in range(4, 36):
