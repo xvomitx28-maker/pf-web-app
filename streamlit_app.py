@@ -47,7 +47,6 @@ DEPARTMENTS = {
     "delicatessen": "Деликатесное отделение"
 }
 
-# Префиксы для названий итоговых файлов и ZIP-архивов
 FILE_PREFIXES = {
     "pf": "Полуфабрикаты",
     "main_deboning": "Основная_обвалка",
@@ -281,10 +280,18 @@ def generate_and_download(status_container):
 
             for day_str, data in st.session_state.shifts.items():
                 day = int(day_str)
-                for emp_full_name in data.get("timesheet", []):
+                timesheet_emps = data.get("timesheet", [])
+                graph_only_emps = data.get("graph_only", {})
+                
+                for emp_full_name in timesheet_emps:
+                    # Если человек на подработке, не ставим ему смену в табель
+                    if emp_full_name in graph_only_emps:
+                        continue 
+                        
                     sheet_name = emp_full_name[:31]
                     if sheet_name in wb_pf.sheetnames: 
                         wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
+                        
                 if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                     wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
             
@@ -530,13 +537,12 @@ if st.session_state.active_month:
             if zip_data:
                 status.update(label="✅ Файлы успешно сформированы!", state="complete", expanded=False)
                 
-                # Берем красивое название для ZIP-архива
                 zip_prefix = FILE_PREFIXES.get(st.session_state.current_dept, "Отчет")
                 
                 st.sidebar.download_button(
                     label="💾 Сохранить на компьютер", 
                     data=zip_data, 
-                    file_name=f"Итоги_{zip_prefix}_{st.session_state.active_month}_{st.session_state.active_year}.zip", # <--- ИЗМЕНЕНО ЗДЕСЬ
+                    file_name=f"Итоги_{zip_prefix}_{st.session_state.active_month}_{st.session_state.active_year}.zip", 
                     mime="application/zip", use_container_width=True
                 )
             else:
@@ -608,6 +614,8 @@ with tab1:
         st.info("👈 Сначала создайте месяц.")
     else:
         st.subheader("Отметка смен")
+        st.info("Если сотрудник работает в своем отделе — ставьте «Смена». Если он ушел на подработку в другой цех — ставьте обе галочки («Смена» и «Подработка»), чтобы он попал в график, но не попал в табель.")
+        
         c1, c2 = st.columns(2)
         with c1: shift_date = st.date_input("Дата смены", datetime.date.today())
         with c2: tonnage = st.number_input("Тоннаж цеха (кг)", min_value=0.0, value=0.0, step=1.0)
@@ -636,10 +644,20 @@ with tab1:
             if isinstance(st.session_state.shifts[day_str]["graph_only"], list): st.session_state.shifts[day_str]["graph_only"] = {n: "" for n in st.session_state.shifts[day_str]["graph_only"]}
             
             for emp_full_name, checks in selected.items():
-                if checks["timesheet"] and emp_full_name not in st.session_state.shifts[day_str]["timesheet"]:
-                    st.session_state.shifts[day_str]["timesheet"].append(emp_full_name)
+                # Независимая запись в Табель
+                if checks["timesheet"]:
+                    if emp_full_name not in st.session_state.shifts[day_str]["timesheet"]:
+                        st.session_state.shifts[day_str]["timesheet"].append(emp_full_name)
+                else:
+                    if emp_full_name in st.session_state.shifts[day_str]["timesheet"]:
+                        st.session_state.shifts[day_str]["timesheet"].remove(emp_full_name)
+                
+                # Независимая запись в График (Подработка)
                 if checks["graph_only"]:
                     st.session_state.shifts[day_str]["graph_only"][emp_full_name] = checks["dept"]
+                else:
+                    if emp_full_name in st.session_state.shifts[day_str]["graph_only"]:
+                        del st.session_state.shifts[day_str]["graph_only"][emp_full_name]
             
             if tonnage > 0: st.session_state.tonnage[day_str] = float(tonnage)
             save_month_to_db()
@@ -656,9 +674,12 @@ with tab1:
             for name, dept in go_dict.items():
                 short_n = next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == name), name)
                 graph_names.append(f"{short_n}{f' (в {dept})' if dept else ''}")
+            
             msg = f"**{day} число:** "
-            if timesheet_names: msg += f"Основная: {', '.join(timesheet_names)}. "
-            if graph_names: msg += f"Подработка: {', '.join(graph_names)}."
+            if timesheet_names: 
+                msg += f"Основная: {', '.join(timesheet_names)}. "
+            if graph_names: 
+                msg += f"Подработка: {', '.join(graph_names)}."
             st.write(msg)
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
