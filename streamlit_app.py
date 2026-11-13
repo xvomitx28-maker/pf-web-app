@@ -48,7 +48,6 @@ DEPARTMENTS = {
     "farshesozdanie": "Отделение фаршесоставления"
 }
 
-# Префиксы для названий итоговых файлов и ZIP-архивов
 FILE_PREFIXES = {
     "pf": "Полуфабрикаты",
     "main_deboning": "Основная_обвалка",
@@ -473,8 +472,7 @@ def generate_and_download(status_container):
             with open(tpl_sh_name, "rb") as f:
                 wb_sh = load_workbook(io.BytesIO(f.read()))
             
-            status_container.write("Обрабатываем Ведомость Шашиной...")
-            wb_sh.calculation.fullCalcOnLoad = True
+            # Делаем поиск листа нечувствительным к регистру и пробелам
             sh_sheet_map = {
                 "pf": "ПФ", 
                 "main_deboning": "Обвалка", 
@@ -482,12 +480,20 @@ def generate_and_download(status_container):
                 "offal": "ЛО", 
                 "delicatessen": "ДО",
                 "formovka": "Формовка",
-                "farshesozdanie": "Фарши" # <--- ИЗМЕНЕНО ЗДЕСЬ
+                "farshesozdanie": "Фарши"
             }
-            sheet_name_sh = sh_sheet_map.get(dept_id, "ПФ")
+            target_sh_name = sh_sheet_map.get(dept_id, "ПФ").strip().lower()
             
-            if sheet_name_sh in wb_sh.sheetnames:
-                ws_sh = wb_sh[sheet_name_sh]
+            actual_sheet_name = None
+            for s_name in wb_sh.sheetnames:
+                if s_name.replace(" ", "").strip().lower() == target_sh_name.replace(" ", ""):
+                    actual_sheet_name = s_name
+                    break
+            
+            if actual_sheet_name:
+                status_container.write(f"Записываем {len(st.session_state.subordinates)} подработчиков на лист '{actual_sheet_name}'...")
+                wb_sh.calculation.fullCalcOnLoad = True
+                ws_sh = wb_sh[actual_sheet_name]
                 start_row = 4
                 for i, sub in enumerate(st.session_state.subordinates):
                     r = start_row + i
@@ -498,6 +504,8 @@ def generate_and_download(status_container):
                     ws_sh.cell(row=r, column=6, value=11)
                     ws_sh.cell(row=r, column=8, value=sub["date"])
                     ws_sh.cell(row=r, column=9, value=sub["amount"])
+            else:
+                status_container.write(f"⚠️ Лист '{target_sh_name}' не найден в файле Шашиной!")
                     
             status_container.write("Сохраняем Ведомость Шашиной...")
             buf = io.BytesIO(); wb_sh.save(buf)
