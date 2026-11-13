@@ -58,13 +58,33 @@ FILE_PREFIXES = {
     "farshesozdanie": "Фаршесоставление"
 }
 
+# Специфичные настройки для Формовки
+FORMOVKA_SUBGROUPS = ["Формовка", "Клипсатор", "Сосисочная линия"]
+FORMOVKA_TABELS = {
+    "Формовка": "tpl_tabel_formovka_formovka.xlsm",
+    "Клипсатор": "tpl_tabel_formovka_klipsator.xlsm",
+    "Сосисочная линия": "tpl_tabel_formovka_line.xlsm"
+}
+FORMOVKA_SUBS = {
+    "Грузчики": "tpl_sub_formovka_gruzchiki.xlsm",
+    "Клипсатор": "tpl_sub_formovka_klipsator.xlsm",
+    "Сосисочная линия": "tpl_sub_formovka_line.xlsm"
+}
+
 POSITIONS_BY_DEPT = {
     "pf": ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"],
     "main_deboning": ["Обвальщик", "Жиловщик", "Весовщик", "Грузчик", "Бригадир"],
     "chicken_deboning": ["Обвальщик курицы", "Жиловщик", "Весовщик", "Грузчик"],
     "offal": ["Обработчик субпродуктов", "Весовщик", "Грузчик"],
     "delicatessen": ["Изготовитель деликатесов", "Формовщик", "Весовщик", "Грузчик"],
-    "formovka": ["Формовщик", "Весовщик", "Грузчик", "Бригадир"],
+    "formovka": [
+        "формовщик", 
+        "грузчик формовки колбасных изделий", 
+        "оператор по производству колбас", 
+        "грузчик линии по производству колбас", 
+        "оператор линии производства сосисок", 
+        "подсобный рабочий сосисочная линия"
+    ],
     "farshesozdanie": ["Фаршесоставитель", "Весовщик", "Грузчик", "Бригадир"]
 }
 
@@ -88,10 +108,12 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "Грузчик", "grade": "", "rate": 3800},
     ],
     "formovka": [
-        {"post": "Формовщик", "grade": "1 разряд", "rate": 4800},
-        {"post": "Формовщик", "grade": "2 разряд", "rate": 4300},
-        {"post": "Весовщик", "grade": "", "rate": 4000},
-        {"post": "Грузчик", "grade": "", "rate": 3800},
+        {"post": "формовщик", "grade": "", "rate": 4500},
+        {"post": "грузчик формовки колбасных изделий", "grade": "", "rate": 4000},
+        {"post": "оператор по производству колбас", "grade": "", "rate": 4800},
+        {"post": "грузчик линии по производству колбас", "grade": "", "rate": 4000},
+        {"post": "оператор линии производства сосисок", "grade": "", "rate": 4800},
+        {"post": "подсобный рабочий сосисочная линия", "grade": "", "rate": 3800},
     ],
     "farshesozdanie": [
         {"post": "Фаршесоставитель", "grade": "1 разряд", "rate": 5200},
@@ -157,22 +179,40 @@ def get_template_name(base_name, dept_id, ext):
     return f"{base_name}_{dept_id}.{ext}"
 
 def load_initial_staff(dept_id):
-    tpl_name = get_template_name("tpl_tabel", dept_id, "xlsm")
-    if not os.path.exists(tpl_name): return []
-    with open(tpl_name, "rb") as f:
-        wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True)
     res = []
-    for sname in wb.sheetnames:
-        if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]"): continue
-        low = sname.lower()
-        if "рузиева" in low: post = "Весовщик"
-        elif "насруддинов" in low or "рузиев и" in low: post = "Грузчик"
-        elif dept_id == "pf": post = "Изготовитель мясных п/ф"
-        else: 
-            positions = POSITIONS_BY_DEPT.get(dept_id, ["Сотрудник"])
-            post = positions[0] if positions else "Сотрудник"
-        res.append({"full_name": sname, "short_name": make_short_name(sname), "post": post, "grade": "—"})
-    wb.close()
+    if dept_id == "formovka":
+        # Для формовки читаем сразу 3 файла и распределяем по подгруппам
+        for sub, filename in FORMOVKA_TABELS.items():
+            if not os.path.exists(filename): continue
+            with open(filename, "rb") as f:
+                wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True)
+            for sname in wb.sheetnames:
+                if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]"): continue
+                res.append({
+                    "full_name": sname, 
+                    "short_name": make_short_name(sname), 
+                    "post": "Сотрудник", 
+                    "grade": "—", 
+                    "subgroup": sub
+                })
+            wb.close()
+    else:
+        # Для остальных - один файл
+        tpl_name = get_template_name("tpl_tabel", dept_id, "xlsm")
+        if not os.path.exists(tpl_name): return []
+        with open(tpl_name, "rb") as f:
+            wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True)
+        for sname in wb.sheetnames:
+            if sname in ("Итог", "рубкг") or sname.startswith("[Уволен]"): continue
+            low = sname.lower()
+            if "рузиева" in low: post = "Весовщик"
+            elif "насруддинов" in low or "рузиев и" in low: post = "Грузчик"
+            elif dept_id == "pf": post = "Изготовитель мясных п/ф"
+            else: 
+                positions = POSITIONS_BY_DEPT.get(dept_id, ["Сотрудник"])
+                post = positions[0] if positions else "Сотрудник"
+            res.append({"full_name": sname, "short_name": make_short_name(sname), "post": post, "grade": "—"})
+        wb.close()
     return res
 
 # ==========================================
@@ -258,88 +298,161 @@ def generate_and_download(status_container):
         
         prefix = FILE_PREFIXES.get(dept_id, "Отчет")
 
-        tpl_pf_name = get_template_name("tpl_tabel", dept_id, "xlsm")
         tpl_gr_name = get_template_name("tpl_graph", dept_id, "xlsx")
-        tpl_sub_name = get_template_name("tpl_sub", dept_id, "xlsm")
         tpl_sh_name = "tpl_sh.xlsx"
 
-        if not all(os.path.exists(f) for f in [tpl_pf_name, tpl_gr_name, tpl_sub_name, tpl_sh_name]):
-            st.error(f"Не все шаблоны загружены на GitHub для отдела '{dept_id}'.")
+        if not os.path.exists(tpl_gr_name) or not os.path.exists(tpl_sh_name):
+            st.error(f"Не все основные шаблоны загружены на GitHub (График или Шашина).")
             return None
 
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 5.1. ТАБЕЛЬ
-            status_container.write("Читаем шаблон Табеля...")
-            with open(tpl_pf_name, "rb") as f:
-                wb_pf = load_workbook(io.BytesIO(f.read()), keep_vba=True)
-            
-            status_container.write("Обрабатываем Табель...")
-            wb_pf.calculation.fullCalcOnLoad = True
-            tpl_pf_sheet = next((s for s in wb_pf.sheetnames if s not in ("Итог", "рубкг")), None)
-
-            for s_name in list(wb_pf.sheetnames):
-                if s_name not in ("Итог", "рубкг", tpl_pf_sheet): del wb_pf[s_name]
-
-            for emp in st.session_state.staff_roster:
-                sheet_name = emp["full_name"][:31]
-                rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
-                if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
-                    new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
-                    new_ws.title = sheet_name
-                    for r in range(2, 33):
-                        if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None 
-                        if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = rate_val 
-
-            if tpl_pf_sheet in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_sheet for e in st.session_state.staff_roster):
-                del wb_pf[tpl_pf_sheet]
-
-            for day_str, data in st.session_state.shifts.items():
-                day = int(day_str)
-                timesheet_emps = data.get("timesheet", [])
-                graph_only_emps = data.get("graph_only", {})
-                
-                for emp_full_name in timesheet_emps:
-                    if emp_full_name in graph_only_emps:
-                        continue 
-                        
-                    sheet_name = emp_full_name[:31]
-                    if sheet_name in wb_pf.sheetnames: 
-                        wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
-                        
-                if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
-                    wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
-            
-            if "Итог" in wb_pf.sheetnames:
-                ws_it = wb_pf["Итог"]
-                for r in range(2, 50):
-                    ws_it.cell(row=r, column=1).value = None
-                    ws_it.cell(row=r, column=2).value = None
-                    ws_it.cell(row=r, column=3).value = None
-                
-                for i, emp in enumerate(st.session_state.staff_roster):
-                    r = 2 + i
-                    sheet_name = emp["full_name"][:31]
-                    ws_it.cell(row=r, column=1, value=emp["full_name"])
-                    ws_it.cell(row=r, column=2, value=f"='{sheet_name}'!J33")
-                    ws_it.cell(row=r, column=3, value=f"='{sheet_name}'!B33")
+            # 5.1. ТАБЕЛИ
+            status_container.write("Обрабатываем Табели...")
+            if dept_id == "formovka":
+                # Обрабатываем 3 табеля по очереди
+                for sub_name, tpl_pf_name in FORMOVKA_TABELS.items():
+                    if not os.path.exists(tpl_pf_name): 
+                        status_container.write(f"⚠️ Файл {tpl_pf_name} не найден, пропускаем.")
+                        continue
                     
-                itogo_r = 2 + len(st.session_state.staff_roster)
-                ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
-                ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
-                ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
-                ws_it.delete_rows(itogo_r + 1, 50)
+                    with open(tpl_pf_name, "rb") as f:
+                        wb_pf = load_workbook(io.BytesIO(f.read()), keep_vba=True)
+                    
+                    wb_pf.calculation.fullCalcOnLoad = True
+                    tpl_pf_sheet = next((s for s in wb_pf.sheetnames if s not in ("Итог", "рубкг")), None)
 
-            status_container.write("Сохраняем Табель...")
-            buf = io.BytesIO(); wb_pf.save(buf)
-            zf.writestr(f"{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
-            del wb_pf; gc.collect()
+                    for s_name in list(wb_pf.sheetnames):
+                        if s_name not in ("Итог", "рубкг", tpl_pf_sheet): del wb_pf[s_name]
 
-            # 5.2. ГРАФИК
-            status_container.write("Читаем шаблон Графика...")
+                    # Берем сотрудников ТОЛЬКО этой подгруппы
+                    sub_roster = [e for e in st.session_state.staff_roster if e.get("subgroup") == sub_name]
+                    
+                    for emp in sub_roster:
+                        sheet_name = emp["full_name"][:31]
+                        rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                        if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
+                            new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
+                            new_ws.title = sheet_name
+                            for r in range(2, 33):
+                                if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None 
+                                if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = rate_val 
+
+                    if tpl_pf_sheet in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_sheet for e in sub_roster):
+                        del wb_pf[tpl_pf_sheet]
+
+                    for day_str, data in st.session_state.shifts.items():
+                        day = int(day_str)
+                        timesheet_emps = data.get("timesheet", [])
+                        graph_only_emps = data.get("graph_only", {})
+                        
+                        for emp_full_name in timesheet_emps:
+                            if emp_full_name in graph_only_emps:
+                                continue 
+                                
+                            sheet_name = emp_full_name[:31]
+                            if sheet_name in wb_pf.sheetnames: 
+                                wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
+                                
+                        if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
+                            wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
+                    
+                    if "Итог" in wb_pf.sheetnames:
+                        ws_it = wb_pf["Итог"]
+                        for r in range(2, 50):
+                            ws_it.cell(row=r, column=1).value = None
+                            ws_it.cell(row=r, column=2).value = None
+                            ws_it.cell(row=r, column=3).value = None
+                        
+                        for i, emp in enumerate(sub_roster):
+                            r = 2 + i
+                            sheet_name = emp["full_name"][:31]
+                            ws_it.cell(row=r, column=1, value=emp["full_name"])
+                            ws_it.cell(row=r, column=2, value=f"='{sheet_name}'!J33")
+                            ws_it.cell(row=r, column=3, value=f"='{sheet_name}'!B33")
+                            
+                        itogo_r = 2 + len(sub_roster)
+                        ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
+                        ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
+                        ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
+                        ws_it.delete_rows(itogo_r + 1, 50)
+
+                    buf = io.BytesIO(); wb_pf.save(buf)
+                    zf.writestr(f"Табель_{sub_name}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                    del wb_pf; gc.collect()
+
+            else:
+                # Стандартная обработка для остальных отделов (один табель)
+                tpl_pf_name = get_template_name("tpl_tabel", dept_id, "xlsm")
+                if not os.path.exists(tpl_pf_name):
+                    st.error(f"Файл {tpl_pf_name} не найден.")
+                    return None
+                    
+                with open(tpl_pf_name, "rb") as f:
+                    wb_pf = load_workbook(io.BytesIO(f.read()), keep_vba=True)
+                
+                wb_pf.calculation.fullCalcOnLoad = True
+                tpl_pf_sheet = next((s for s in wb_pf.sheetnames if s not in ("Итог", "рубкг")), None)
+
+                for s_name in list(wb_pf.sheetnames):
+                    if s_name not in ("Итог", "рубкг", tpl_pf_sheet): del wb_pf[s_name]
+
+                for emp in st.session_state.staff_roster:
+                    sheet_name = emp["full_name"][:31]
+                    rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                    if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
+                        new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
+                        new_ws.title = sheet_name
+                        for r in range(2, 33):
+                            if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None 
+                            if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = rate_val 
+
+                if tpl_pf_sheet in wb_pf.sheetnames and not any(e["full_name"][:31] == tpl_pf_sheet for e in st.session_state.staff_roster):
+                    del wb_pf[tpl_pf_sheet]
+
+                for day_str, data in st.session_state.shifts.items():
+                    day = int(day_str)
+                    timesheet_emps = data.get("timesheet", [])
+                    graph_only_emps = data.get("graph_only", {})
+                    
+                    for emp_full_name in timesheet_emps:
+                        if emp_full_name in graph_only_emps:
+                            continue 
+                        sheet_name = emp_full_name[:31]
+                        if sheet_name in wb_pf.sheetnames: 
+                            wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
+                            
+                    if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
+                        wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
+                
+                if "Итог" in wb_pf.sheetnames:
+                    ws_it = wb_pf["Итог"]
+                    for r in range(2, 50):
+                        ws_it.cell(row=r, column=1).value = None
+                        ws_it.cell(row=r, column=2).value = None
+                        ws_it.cell(row=r, column=3).value = None
+                    
+                    for i, emp in enumerate(st.session_state.staff_roster):
+                        r = 2 + i
+                        sheet_name = emp["full_name"][:31]
+                        ws_it.cell(row=r, column=1, value=emp["full_name"])
+                        ws_it.cell(row=r, column=2, value=f"='{sheet_name}'!J33")
+                        ws_it.cell(row=r, column=3, value=f"='{sheet_name}'!B33")
+                        
+                    itogo_r = 2 + len(st.session_state.staff_roster)
+                    ws_it.cell(row=itogo_r, column=1, value="ИТОГО:")
+                    ws_it.cell(row=itogo_r, column=2, value=f"=SUM(B2:B{itogo_r-1})")
+                    ws_it.cell(row=itogo_r, column=3, value=f"=SUM(C2:C{itogo_r-1})")
+                    ws_it.delete_rows(itogo_r + 1, 50)
+
+                buf = io.BytesIO(); wb_pf.save(buf)
+                zf.writestr(f"{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                del wb_pf; gc.collect()
+
+            # 5.2. ГРАФИК (ОДИН ДЛЯ ВСЕХ)
+            status_container.write("Обрабатываем График...")
             with open(tpl_gr_name, "rb") as f:
                 wb_gr = load_workbook(io.BytesIO(f.read()))
             
-            status_container.write("Обрабатываем График...")
             ws_gr = wb_gr.active
             ws_gr['A1'] = m_name
             try: ws_gr.title = f"{m_name} {y_val}"
@@ -391,7 +504,7 @@ def generate_and_download(status_container):
                 shifts_count = 0
                 for day_str, data in st.session_state.shifts.items():
                     day = int(day_str); col_idx = 3 + day
-                    hours = 8 if emp["post"] in ("Весовщик", "Грузчик") else 11
+                    hours = 8 if "грузчик" in emp["post"].lower() or "подсобный" in emp["post"].lower() else 11
                     
                     if emp["full_name"] in data.get("graph_only", {}):
                         dept_name = data["graph_only"][emp["full_name"]]
@@ -411,68 +524,132 @@ def generate_and_download(status_container):
             del wb_gr; gc.collect()
 
             # 5.3. ПОДРАБОТЧИКИ
-            status_container.write("Читаем шаблон Подработчиков...")
-            with open(tpl_sub_name, "rb") as f:
-                wb_sub = load_workbook(io.BytesIO(f.read()), keep_vba=True)
-            
             status_container.write("Обрабатываем Подработчиков...")
-            wb_sub.calculation.fullCalcOnLoad = True
-            tpl_sub_sheet = next((s for s in wb_sub.sheetnames if s != "Итог"), None)
+            if dept_id == "formovka":
+                # Разбиваем на 3 файла по подгруппам
+                for group_name, file_name in FORMOVKA_SUBS.items():
+                    if not os.path.exists(file_name):
+                        status_container.write(f"⚠️ Файл {file_name} не найден, пропускаем.")
+                        continue
+                        
+                    group_subs = [s for s in st.session_state.subordinates if s.get("subgroup") == group_name]
+                    if not group_subs:
+                        continue
+                        
+                    with open(file_name, "rb") as f:
+                        wb_sub = load_workbook(io.BytesIO(f.read()), keep_vba=True)
                     
-            for s in list(wb_sub.sheetnames):
-                if s not in ("Итог", tpl_sub_sheet): del wb_sub[s]
+                    wb_sub.calculation.fullCalcOnLoad = True
+                    tpl_sub_sheet = next((s for s in wb_sub.sheetnames if s != "Итог"), None)
+                            
+                    for s in list(wb_sub.sheetnames):
+                        if s not in ("Итог", tpl_sub_sheet): del wb_sub[s]
+                            
+                    subs_by_fio = {}
+                    for sub in group_subs:
+                        sheet_name = sub["short_name"][:31]
+                        if sheet_name not in wb_sub.sheetnames and tpl_sub_sheet:
+                            new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sub_sheet])
+                            new_ws.title = sheet_name
+                            for r in range(2, 33): 
+                                if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None
+                                if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = None
+                        
+                        day = int(sub["date"].split(".")[0])
+                        wb_sub[sheet_name].cell(row=day + 1, column=2, value=1)
+                        wb_sub[sheet_name].cell(row=day + 1, column=3, value=sub["amount"])
+                        
+                        if sheet_name not in subs_by_fio: subs_by_fio[sheet_name] = {"amount": 0.0, "shifts": 0}
+                        subs_by_fio[sheet_name]["amount"] += float(sub["amount"])
+                        subs_by_fio[sheet_name]["shifts"] += 1
+                        
+                    if tpl_sub_sheet in wb_sub.sheetnames: del wb_sub[tpl_sub_sheet]
                     
-            subs_by_fio = {}
-            for sub in st.session_state.subordinates:
-                sheet_name = sub["short_name"][:31]
-                if sheet_name not in wb_sub.sheetnames and tpl_sub_sheet:
-                    new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sub_sheet])
-                    new_ws.title = sheet_name
-                    for r in range(2, 33): 
-                        if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None
-                        if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = None
-                
-                day = int(sub["date"].split(".")[0])
-                wb_sub[sheet_name].cell(row=day + 1, column=2, value=1)
-                wb_sub[sheet_name].cell(row=day + 1, column=3, value=sub["amount"])
-                
-                if sheet_name not in subs_by_fio: subs_by_fio[sheet_name] = {"amount": 0.0, "shifts": 0}
-                subs_by_fio[sheet_name]["amount"] += float(sub["amount"])
-                subs_by_fio[sheet_name]["shifts"] += 1
-                
-            if tpl_sub_sheet in wb_sub.sheetnames: del wb_sub[tpl_sub_sheet]
-            
-            if "Итог" in wb_sub.sheetnames:
-                ws_it = wb_sub["Итог"]
-                itogo_row = 50
-                for r in range(2, 50):
-                    if str(ws_it.cell(row=r, column=1).value or "").strip().upper() == "ИТОГО:": itogo_row = r; break
-                    ws_it.cell(row=r, column=1).value = None
-                    ws_it.cell(row=r, column=2).value = None
-                    ws_it.cell(row=r, column=3).value = None
-                
-                for i, (fio, data) in enumerate(subs_by_fio.items()):
-                    r = 2 + i
-                    if r < itogo_row:
-                        ws_it.cell(row=r, column=1, value=fio)
-                        ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
-                        ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
+                    if "Итог" in wb_sub.sheetnames:
+                        ws_it = wb_sub["Итог"]
+                        itogo_row = 50
+                        for r in range(2, 50):
+                            if str(ws_it.cell(row=r, column=1).value or "").strip().upper() == "ИТОГО:": itogo_row = r; break
+                            ws_it.cell(row=r, column=1).value = None
+                            ws_it.cell(row=r, column=2).value = None
+                            ws_it.cell(row=r, column=3).value = None
+                        
+                        for i, (fio, data) in enumerate(subs_by_fio.items()):
+                            r = 2 + i
+                            if r < itogo_row:
+                                ws_it.cell(row=r, column=1, value=fio)
+                                ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
+                                ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
 
-                if itogo_row < 50:
-                    ws_it.cell(row=itogo_row, column=2, value=f"=SUM(B2:B{itogo_row-1})")
-                    ws_it.cell(row=itogo_row, column=3, value=f"=SUM(C2:C{itogo_row-1})")
+                        if itogo_row < 50:
+                            ws_it.cell(row=itogo_row, column=2, value=f"=SUM(B2:B{itogo_row-1})")
+                            ws_it.cell(row=itogo_row, column=3, value=f"=SUM(C2:C{itogo_row-1})")
                     
-            status_container.write("Сохраняем Подработчиков...")
-            buf = io.BytesIO(); wb_sub.save(buf)
-            zf.writestr(f"Подработчики_{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
-            del wb_sub; gc.collect()
+                    buf = io.BytesIO(); wb_sub.save(buf)
+                    zf.writestr(f"Подработка_{group_name}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                    del wb_sub; gc.collect()
+            else:
+                # Стандартная обработка для одного файла
+                tpl_sub_name = get_template_name("tpl_sub", dept_id, "xlsm")
+                if os.path.exists(tpl_sub_name):
+                    with open(tpl_sub_name, "rb") as f:
+                        wb_sub = load_workbook(io.BytesIO(f.read()), keep_vba=True)
+                    
+                    wb_sub.calculation.fullCalcOnLoad = True
+                    tpl_sub_sheet = next((s for s in wb_sub.sheetnames if s != "Итог"), None)
+                            
+                    for s in list(wb_sub.sheetnames):
+                        if s not in ("Итог", tpl_sub_sheet): del wb_sub[s]
+                            
+                    subs_by_fio = {}
+                    for sub in st.session_state.subordinates:
+                        sheet_name = sub["short_name"][:31]
+                        if sheet_name not in wb_sub.sheetnames and tpl_sub_sheet:
+                            new_ws = wb_sub.copy_worksheet(wb_sub[tpl_sub_sheet])
+                            new_ws.title = sheet_name
+                            for r in range(2, 33): 
+                                if new_ws.cell(row=r, column=2).data_type != 'f': new_ws.cell(row=r, column=2).value = None
+                                if new_ws.cell(row=r, column=3).data_type != 'f': new_ws.cell(row=r, column=3).value = None
+                        
+                        day = int(sub["date"].split(".")[0])
+                        wb_sub[sheet_name].cell(row=day + 1, column=2, value=1)
+                        wb_sub[sheet_name].cell(row=day + 1, column=3, value=sub["amount"])
+                        
+                        if sheet_name not in subs_by_fio: subs_by_fio[sheet_name] = {"amount": 0.0, "shifts": 0}
+                        subs_by_fio[sheet_name]["amount"] += float(sub["amount"])
+                        subs_by_fio[sheet_name]["shifts"] += 1
+                        
+                    if tpl_sub_sheet in wb_sub.sheetnames: del wb_sub[tpl_sub_sheet]
+                    
+                    if "Итог" in wb_sub.sheetnames:
+                        ws_it = wb_sub["Итог"]
+                        itogo_row = 50
+                        for r in range(2, 50):
+                            if str(ws_it.cell(row=r, column=1).value or "").strip().upper() == "ИТОГО:": itogo_row = r; break
+                            ws_it.cell(row=r, column=1).value = None
+                            ws_it.cell(row=r, column=2).value = None
+                            ws_it.cell(row=r, column=3).value = None
+                        
+                        for i, (fio, data) in enumerate(subs_by_fio.items()):
+                            r = 2 + i
+                            if r < itogo_row:
+                                ws_it.cell(row=r, column=1, value=fio)
+                                ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
+                                ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
+
+                        if itogo_row < 50:
+                            ws_it.cell(row=itogo_row, column=2, value=f"=SUM(B2:B{itogo_row-1})")
+                            ws_it.cell(row=itogo_row, column=3, value=f"=SUM(C2:C{itogo_row-1})")
+                            
+                    buf = io.BytesIO(); wb_sub.save(buf)
+                    zf.writestr(f"Подработчики_{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                    del wb_sub; gc.collect()
 
             # 5.4. ВЕДОМОСТЬ ШАШИНОЙ
-            status_container.write("Читаем шаблон Ведомости Шашиной...")
+            status_container.write("Обрабатываем Ведомость Шашиной...")
             with open(tpl_sh_name, "rb") as f:
                 wb_sh = load_workbook(io.BytesIO(f.read()))
             
-            # Делаем поиск листа нечувствительным к регистру и пробелам
             sh_sheet_map = {
                 "pf": "ПФ", 
                 "main_deboning": "Обвалка", 
@@ -507,7 +684,6 @@ def generate_and_download(status_container):
             else:
                 status_container.write(f"⚠️ Лист '{target_sh_name}' не найден в файле Шашиной!")
                     
-            status_container.write("Сохраняем Ведомость Шашиной...")
             buf = io.BytesIO(); wb_sh.save(buf)
             zf.writestr(f"Шашина_{m_name}_{y_val}.xlsx", buf.getvalue())
             del wb_sh; gc.collect()
@@ -651,6 +827,7 @@ with tab1:
             with col1:
                 label = f"{emp['short_name']} — {emp['post']}"
                 if emp.get('grade') and emp['grade'] != "—": label += f" ({emp['grade']})"
+                if "subgroup" in emp: label += f" [{emp['subgroup']}]"
                 st.write(label)
             with col2:
                 is_main = st.checkbox("Смена", key=f"main_{emp['full_name']}", label_visibility="collapsed")
@@ -711,11 +888,17 @@ with tab2:
     else:
         st.subheader("Внесение подработки (Пофамильно)")
         c1, c2 = st.columns(2)
+        
+        subgroup_val = None
         with c1:
             fio = st.text_input("ФИО подработчика")
             post = st.selectbox("Должность", get_current_positions())
             available_grades = ["—"] + [r["grade"] for r in st.session_state.rates if r["post"] == post and r["grade"]]
             grade = st.selectbox("Разряд", available_grades) if len(available_grades) > 1 else "—"
+            
+            if st.session_state.current_dept == "formovka":
+                subgroup_val = st.selectbox("Куда вышел? (Подгруппа)", ["Грузчики", "Клипсатор", "Сосисочная линия"])
+                
         with c2:
             sub_date = st.date_input("Дата")
             amount = st.number_input("Сумма (руб)", min_value=0.0, value=4500.0, step=100.0)
@@ -723,7 +906,10 @@ with tab2:
         if st.button("💾 Добавить подработку", type="primary"):
             if not fio.strip(): st.error("Укажите ФИО")
             else:
-                st.session_state.subordinates.append({"short_name": fio.strip(), "post": post, "grade": grade, "date": sub_date.strftime("%d.%m.%Y"), "amount": float(amount)})
+                new_sub = {"short_name": fio.strip(), "post": post, "grade": grade, "date": sub_date.strftime("%d.%m.%Y"), "amount": float(amount)}
+                if subgroup_val:
+                    new_sub["subgroup"] = subgroup_val
+                st.session_state.subordinates.append(new_sub)
                 save_month_to_db()
                 st.success("Подработка добавлена!")
                 st.rerun()
@@ -731,7 +917,10 @@ with tab2:
         st.markdown("---")
         if st.session_state.subordinates:
             df_sub = pd.DataFrame(st.session_state.subordinates)
-            if not df_sub.empty: st.table(df_sub[["short_name", "post", "grade", "date", "amount"]])
+            cols = ["short_name", "post", "grade", "date", "amount"]
+            if "subgroup" in df_sub.columns:
+                cols.insert(1, "subgroup")
+            if not df_sub.empty: st.table(df_sub[cols])
         else: st.write("Пока нет записей.")
 
 # ================= TAB 3: СТАВКИ =================
@@ -766,17 +955,37 @@ with tab4:
             if r.get("grade") and str(r["grade"]).strip(): all_grades.add(str(r["grade"]).strip())
         grade_options = ["—"] + sorted(list(all_grades))
         
-        df_staff = pd.DataFrame(st.session_state.staff_roster).rename(columns={"full_name": "Полное ФИО", "short_name": "Короткое ФИО", "post": "Должность", "grade": "Разряд"})
+        df_staff = pd.DataFrame(st.session_state.staff_roster).rename(columns={"full_name": "Полное ФИО", "short_name": "Короткое ФИО", "post": "Должность", "grade": "Разряд", "subgroup": "Подгруппа"})
+        
+        # Настраиваем колонки в зависимости от отдела
+        column_config = {
+            "Полное ФИО": st.column_config.TextColumn(required=True),
+            "Короткое ФИО": st.column_config.TextColumn(required=True),
+            "Должность": st.column_config.SelectboxColumn(options=get_current_positions(), required=True),
+            "Разряд": st.column_config.SelectboxColumn(options=grade_options)
+        }
+        
+        if st.session_state.current_dept == "formovka":
+            column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=FORMOVKA_SUBGROUPS, required=True)
+
         edited_df = st.data_editor(
             df_staff, num_rows="dynamic", use_container_width=True,
-            column_config={"Полное ФИО": st.column_config.TextColumn(required=True), "Короткое ФИО": st.column_config.TextColumn(required=True), "Должность": st.column_config.SelectboxColumn(options=get_current_positions(), required=True), "Разряд": st.column_config.SelectboxColumn(options=grade_options)},
+            column_config=column_config,
             key="staff_editor"
         )
         if st.button("💾 Сохранить штат", type="primary"):
             new_roster = []
             for _, row in edited_df.iterrows():
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
-                    new_roster.append({"full_name": str(row["Полное ФИО"]).strip(), "short_name": str(row["Короткое ФИО"]).strip() if pd.notna(row["Короткое ФИО"]) else make_short_name(str(row["Полное ФИО"])), "post": str(row["Должность"]).strip() if pd.notna(row["Должность"]) else get_current_positions()[0], "grade": str(row["Разряд"]).strip() if pd.notna(row["Разряд"]) else "—"})
+                    new_emp = {
+                        "full_name": str(row["Полное ФИО"]).strip(), 
+                        "short_name": str(row["Короткое ФИО"]).strip() if pd.notna(row["Короткое ФИО"]) else make_short_name(str(row["Полное ФИО"])), 
+                        "post": str(row["Должность"]).strip() if pd.notna(row["Должность"]) else get_current_positions()[0], 
+                        "grade": str(row["Разряд"]).strip() if pd.notna(row["Разряд"]) else "—"
+                    }
+                    if st.session_state.current_dept == "formovka" and "Подгруппа" in row and pd.notna(row["Подгруппа"]):
+                        new_emp["subgroup"] = str(row["Подгруппа"])
+                    new_roster.append(new_emp)
             st.session_state.staff_roster = new_roster
             save_global_settings()
             st.success("✅ Штат сохранен!")
