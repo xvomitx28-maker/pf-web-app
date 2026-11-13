@@ -300,7 +300,6 @@ def generate_and_download(status_container):
                 graph_only_emps = data.get("graph_only", {})
                 
                 for emp_full_name in timesheet_emps:
-                    # Если человек на подработке, не ставим ему смену в табель
                     if emp_full_name in graph_only_emps:
                         continue 
                         
@@ -483,7 +482,7 @@ def generate_and_download(status_container):
                 "offal": "ЛО", 
                 "delicatessen": "ДО",
                 "formovka": "Формовка",
-                "farshesozdanie": "Фаршесоставление"
+                "farshesozdanie": "Фарши" # <--- ИЗМЕНЕНО ЗДЕСЬ
             }
             sheet_name_sh = sh_sheet_map.get(dept_id, "ПФ")
             
@@ -661,7 +660,6 @@ with tab1:
             if isinstance(st.session_state.shifts[day_str]["graph_only"], list): st.session_state.shifts[day_str]["graph_only"] = {n: "" for n in st.session_state.shifts[day_str]["graph_only"]}
             
             for emp_full_name, checks in selected.items():
-                # Независимая запись в Табель
                 if checks["timesheet"]:
                     if emp_full_name not in st.session_state.shifts[day_str]["timesheet"]:
                         st.session_state.shifts[day_str]["timesheet"].append(emp_full_name)
@@ -669,7 +667,6 @@ with tab1:
                     if emp_full_name in st.session_state.shifts[day_str]["timesheet"]:
                         st.session_state.shifts[day_str]["timesheet"].remove(emp_full_name)
                 
-                # Независимая запись в График (Подработка)
                 if checks["graph_only"]:
                     st.session_state.shifts[day_str]["graph_only"][emp_full_name] = checks["dept"]
                 else:
