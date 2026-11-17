@@ -36,7 +36,7 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # ==========================================
-# 1. СЛОВАРИ ОТДЕЛОВ И ДОЛЖНОСТЕЙ
+# 1. СЛОВАРИ ОТДЕЛОВ, ПАРОЛЕЙ И ДОЛЖНОСТЕЙ
 # ==========================================
 DEPARTMENTS = {
     "pf": "Отделение Полуфабрикатов",
@@ -46,6 +46,16 @@ DEPARTMENTS = {
     "delicatessen": "Деликатесное отделение",
     "formovka": "Отделение формовки",
     "farshesozdanie": "Отделение фаршесоставления"
+}
+
+DEPT_PASSWORDS = {
+    "pf": "1145",
+    "delicatessen": "1145",
+    "formovka": "2278",
+    "farshesozdanie": "2278",
+    "main_deboning": "3591",
+    "chicken_deboning": "4826",
+    "offal": "5739"
 }
 
 FILE_PREFIXES = {
@@ -82,10 +92,25 @@ MAIN_DEBONING_POKAZ = {
     "Обвалка": "tpl_pokaz_main_deboning_obvalka.xlsx",
     "Жиловка": "tpl_pokaz_main_deboning_zhilovka.xlsx"
 }
+
+# Специфичные настройки для Куриной обвалки
+CHICKEN_DEBONING_SUBGROUPS = ["Обвалка", "Жиловка"]
+CHICKEN_DEBONING_TABELS = {
+    "Обвалка": "tpl_tabel_chicken_deboning_obvalka.xlsm",
+    "Жиловка": "tpl_tabel_chicken_deboning_zhilovka.xlsm"
+}
+CHICKEN_DEBONING_SUBS = {
+    "Жиловка": "tpl_sub_chicken_deboning_zhilovka.xlsm",
+    "Грузчики": "tpl_sub_chicken_deboning_gruzchiki.xlsm"
+}
+CHICKEN_DEBONING_POKAZ = {
+    "Жиловка": "tpl_pokaz_chicken_deboning_zhilovka.xlsx"
+}
+
 PAY_TYPES_DEBONING = ["По коэффициенту бригады", "Фиксированный (100%)"]
 
 POSITIONS_BY_DEPT = {
-    "pf": ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир"],
+    "pf": ["Изготовитель мясных п/ф", "Весовщик", "Грузчик", "Формовщик", "Жиловщик", "Оператор линии", "Бригадир", "Мастер"],
     "main_deboning": [
         "Обвальщик",
         "Жиловщик",
@@ -97,18 +122,25 @@ POSITIONS_BY_DEPT = {
         "Весовщик-логист",
         "Мастер"
     ],
-    "chicken_deboning": ["Обвальщик курицы", "Жиловщик", "Весовщик", "Грузчик"],
-    "offal": ["Обработчик субпродуктов", "Весовщик", "Грузчик"],
-    "delicatessen": ["Изготовитель деликатесов", "Формовщик", "Весовщик", "Грузчик"],
+    "chicken_deboning": [
+        "Обвальщик птицы",
+        "Жиловщик птицы",
+        "Подача",
+        "Грузчик",
+        "Мастер"
+    ],
+    "offal": ["Обработчик субпродуктов", "Весовщик", "Грузчик", "Мастер"],
+    "delicatessen": ["Изготовитель деликатесов", "Формовщик", "Весовщик", "Грузчик", "Мастер"],
     "formovka": [
         "формовщик",
         "грузчик формовки колбасных изделий",
         "оператор по производству колбас",
         "грузчик линии по производству колбас",
         "оператор линии производства сосисок",
-        "подсобный рабочий сосисочная линия"
+        "подсобный рабочий сосисочная линия",
+        "Мастер"
     ],
-    "farshesozdanie": ["Фаршесоставитель", "Весовщик", "Грузчик", "Бригадир"]
+    "farshesozdanie": ["Фаршесоставитель", "Весовщик", "Грузчик", "Бригадир", "Мастер"]
 }
 
 DEFAULT_RATES_BY_DEPT = {
@@ -117,6 +149,7 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "Грузчик", "grade": "", "rate": 4300},
         {"post": "Изготовитель мясных п/ф", "grade": "1 разряд", "rate": 3700},
         {"post": "Изготовитель мясных п/ф", "grade": "2 разряд", "rate": 4500},
+        {"post": "Мастер", "grade": "", "rate": 7370},
     ],
     "main_deboning": [
         {"post": "Обвальщик", "grade": "", "rate": 8200},
@@ -129,12 +162,26 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "Весовщик-логист", "grade": "", "rate": 5000},
         {"post": "Мастер", "grade": "", "rate": 7370},
     ],
+    "chicken_deboning": [
+        {"post": "Обвальщик птицы", "grade": "", "rate": 5280},
+        {"post": "Жиловщик птицы", "grade": "", "rate": 4440},
+        {"post": "Подача", "grade": "", "rate": 5000},
+        {"post": "Грузчик", "grade": "", "rate": 4300},
+        {"post": "Мастер", "grade": "", "rate": 7370},
+    ],
+    "offal": [
+        {"post": "Обработчик субпродуктов", "grade": "", "rate": 4500},
+        {"post": "Весовщик", "grade": "", "rate": 4000},
+        {"post": "Грузчик", "grade": "", "rate": 3800},
+        {"post": "Мастер", "grade": "", "rate": 7370},
+    ],
     "delicatessen": [
         {"post": "Изготовитель деликатесов", "grade": "1 разряд", "rate": 5200},
         {"post": "Изготовитель деликатесов", "grade": "2 разряд", "rate": 4600},
         {"post": "Формовщик", "grade": "", "rate": 4300},
         {"post": "Весовщик", "grade": "", "rate": 4000},
         {"post": "Грузчик", "grade": "", "rate": 3800},
+        {"post": "Мастер", "grade": "", "rate": 7370},
     ],
     "formovka": [
         {"post": "формовщик", "grade": "", "rate": 4500},
@@ -143,12 +190,14 @@ DEFAULT_RATES_BY_DEPT = {
         {"post": "грузчик линии по производству колбас", "grade": "", "rate": 4000},
         {"post": "оператор линии производства сосисок", "grade": "", "rate": 4800},
         {"post": "подсобный рабочий сосисочная линия", "grade": "", "rate": 3800},
+        {"post": "Мастер", "grade": "", "rate": 7370},
     ],
     "farshesozdanie": [
         {"post": "Фаршесоставитель", "grade": "1 разряд", "rate": 5200},
         {"post": "Фаршесоставитель", "grade": "2 разряд", "rate": 4600},
         {"post": "Весовщик", "grade": "", "rate": 4000},
         {"post": "Грузчик", "grade": "", "rate": 3800},
+        {"post": "Мастер", "grade": "", "rate": 7370},
     ],
 }
 
@@ -172,12 +221,15 @@ NO_FILL = PatternFill(fill_type=None)
 # ==========================================
 _defaults = {
     "current_dept": "",
+    "unlocked_pins": [],
     "active_month": "", "active_year": "", "current_id": None,
     "shifts": {},
     "tonnage": {}, "subordinates": [],
     "brigade_percents": {},
     "emp_percents": {},
     "emp_remarks": {},
+    "emp_remarks_2": {},
+    "emp_hours": {},
     "staff_roster": [], "rates": []
 }
 for k, v in _defaults.items():
@@ -187,13 +239,29 @@ for k, v in _defaults.items():
 # ==========================================
 # 3. ХЕЛПЕРЫ
 # ==========================================
+def is_deboning_dept(dept_id):
+    return dept_id in ("main_deboning", "chicken_deboning")
+
+def is_master_post(post_name):
+    return "мастер" in str(post_name or "").strip().lower()
+
+def calc_master_shift_pay(shift_or_hourly_rate, hours):
+    rate = float(shift_or_hourly_rate)
+    hrs = float(hours)
+    if rate <= 2000:
+        return round(rate * hrs, 2)
+    return round((rate / 11.0) * hrs, 2)
+
 def get_current_positions():
     positions = []
     for r in st.session_state.rates:
         if r.get("post") and str(r["post"]).strip() not in positions:
             positions.append(str(r["post"]).strip())
+    for p in POSITIONS_BY_DEPT.get(st.session_state.current_dept, []):
+        if p not in positions:
+            positions.append(p)
     if not positions:
-        positions = POSITIONS_BY_DEPT.get(st.session_state.current_dept, ["Сотрудник"])
+        positions = ["Сотрудник", "Мастер"]
     return positions
 
 def make_short_name(full_name):
@@ -207,6 +275,8 @@ def get_rate_for(post, grade):
     for r in st.session_state.rates:
         if r["post"] == post:
             return r["rate"]
+    if is_master_post(post):
+        return 7370
     return 4500
 
 def get_template_name(base_name, dept_id, ext):
@@ -281,6 +351,43 @@ def load_initial_staff(dept_id):
                 else:
                     post = "Оператор машины по изм. мяса"
                     pay_type = "Фиксированный (100%)"
+
+                res.append({
+                    "full_name": sname.strip(),
+                    "short_name": make_short_name(sname),
+                    "post": post,
+                    "grade": "—",
+                    "subgroup": sub,
+                    "pay_type": pay_type
+                })
+            wb.close()
+    elif dept_id == "chicken_deboning":
+        skip_sheets = {"Итог", "Общий", "рубкг", "тоннаж"}
+        for sub, filename in CHICKEN_DEBONING_TABELS.items():
+            if not os.path.exists(filename):
+                continue
+            with open(filename, "rb") as f:
+                wb = load_workbook(io.BytesIO(f.read()), keep_vba=True, read_only=True)
+            for sname in wb.sheetnames:
+                if sname.strip() in skip_sheets or sname.startswith("[Уволен]"):
+                    continue
+                low = sname.lower()
+                if sub == "Обвалка":
+                    if any(k in low for k in ["баринов", "зайцев"]):
+                        post = "Мастер"
+                        pay_type = "Фиксированный (100%)"
+                    elif "богдагулов" in low:
+                        post = "Подача"
+                        pay_type = "Фиксированный (100%)"
+                    elif "исоев" in low:
+                        post = "Грузчик"
+                        pay_type = "Фиксированный (100%)"
+                    else:
+                        post = "Обвальщик птицы"
+                        pay_type = "По коэффициенту бригады"
+                else:
+                    post = "Жиловщик птицы"
+                    pay_type = "По коэффициенту бригады"
 
                 res.append({
                     "full_name": sname.strip(),
@@ -366,7 +473,9 @@ def save_month_to_db():
             "subordinates": st.session_state.subordinates,
             "brigade_percents": st.session_state.brigade_percents,
             "emp_percents": st.session_state.emp_percents,
-            "emp_remarks": st.session_state.emp_remarks
+            "emp_remarks": st.session_state.emp_remarks,
+            "emp_remarks_2": st.session_state.emp_remarks_2,
+            "emp_hours": st.session_state.emp_hours
         }
         json_str = json.dumps(payload, ensure_ascii=False)
         data = {"pf_base64": base64.b64encode(json_str.encode('utf-8')).decode("utf-8")}
@@ -397,6 +506,8 @@ def load_month_from_db(record_id):
             st.session_state.brigade_percents = payload.get("brigade_percents", {})
             st.session_state.emp_percents = payload.get("emp_percents", {})
             st.session_state.emp_remarks = payload.get("emp_remarks", {})
+            st.session_state.emp_remarks_2 = payload.get("emp_remarks_2", {})
+            st.session_state.emp_hours = payload.get("emp_hours", {})
             st.session_state.current_id = record_id
             parts = record_id.split("_")
             st.session_state.active_month = parts[0]
@@ -445,10 +556,13 @@ def generate_and_download(status_container):
                             del wb_pf[s_name]
 
                     sub_roster = [e for e in st.session_state.staff_roster if e.get("subgroup") == sub_name]
+                    roster_map = {e["full_name"]: e for e in sub_roster}
 
                     for emp in sub_roster:
                         sheet_name = emp["full_name"][:31]
                         rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                        if is_master_post(emp["post"]):
+                            rate_val = calc_master_shift_pay(rate_val, 11.0)
                         if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
                             new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
                             new_ws.title = sheet_name
@@ -465,6 +579,7 @@ def generate_and_download(status_container):
                         day = int(day_str)
                         timesheet_emps = data.get("timesheet", [])
                         graph_only_emps = data.get("graph_only", {})
+                        day_hours_map = st.session_state.emp_hours.get(day_str, {})
 
                         for emp_full_name in timesheet_emps:
                             if emp_full_name in graph_only_emps:
@@ -472,6 +587,12 @@ def generate_and_download(status_container):
                             sheet_name = emp_full_name[:31]
                             if sheet_name in wb_pf.sheetnames:
                                 wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
+                                emp_obj = roster_map.get(emp_full_name)
+                                if emp_obj and is_master_post(emp_obj["post"]):
+                                    hrs = float(day_hours_map.get(emp_full_name, 11.0))
+                                    base_r = get_rate_for(emp_obj["post"], emp_obj.get("grade", ""))
+                                    if wb_pf[sheet_name].cell(row=day + 1, column=3).data_type != 'f':
+                                        wb_pf[sheet_name].cell(row=day + 1, column=3, value=calc_master_shift_pay(base_r, hrs))
 
                         if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                             wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
@@ -502,9 +623,12 @@ def generate_and_download(status_container):
                     del wb_pf
                     gc.collect()
 
-            elif dept_id == "main_deboning":
+            elif is_deboning_dept(dept_id):
                 service_sheets = {"Итог", "Общий", "рубкг", "тоннаж"}
-                for sub_name, tpl_pf_name in MAIN_DEBONING_TABELS.items():
+                tabels_map = MAIN_DEBONING_TABELS if dept_id == "main_deboning" else CHICKEN_DEBONING_TABELS
+                pokaz_map = MAIN_DEBONING_POKAZ if dept_id == "main_deboning" else CHICKEN_DEBONING_POKAZ
+
+                for sub_name, tpl_pf_name in tabels_map.items():
                     if not os.path.exists(tpl_pf_name):
                         status_container.write(f"⚠️ Файл {tpl_pf_name} не найден, пропускаем.")
                         continue
@@ -538,6 +662,8 @@ def generate_and_download(status_container):
                     for emp in sub_roster:
                         sheet_name = emp["full_name"][:31]
                         rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                        if is_master_post(emp["post"]):
+                            rate_val = calc_master_shift_pay(rate_val, 11.0)
                         if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
                             new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
                             new_ws.title = sheet_name
@@ -561,6 +687,7 @@ def generate_and_download(status_container):
                         timesheet_emps = data.get("timesheet", [])
                         graph_only_emps = data.get("graph_only", {})
                         day_emp_pcts = st.session_state.emp_percents.get(day_str, {})
+                        day_hours_map = st.session_state.emp_hours.get(day_str, {})
                         b_data = st.session_state.brigade_percents.get(day_str, {})
                         brigade_pct = float(b_data.get("obvalka", 100.0)) if sub_name == "Обвалка" else (
                             float(b_data.get("zhilovka", 100.0)) if sub_name == "Жиловка" else 100.0
@@ -576,17 +703,29 @@ def generate_and_download(status_container):
                                 ws_emp = wb_pf[sheet_name]
                                 ws_emp.cell(row=day + 1, column=2, value=1)
                                 emp_obj = roster_map[emp_full_name]
-                                default_pct = brigade_pct if emp_obj.get("pay_type") == "По коэффициенту бригады" else 100.0
-                                actual_pct = float(day_emp_pcts.get(emp_full_name, default_pct))
 
-                                if "Общий" in wb_pf.sheetnames and abs(actual_pct - brigade_pct) < 0.001 and emp_obj.get("pay_type") == "По коэффициенту бригады":
-                                    ws_emp.cell(row=day + 1, column=4, value=f"=Общий!B{day + 1}")
+                                if is_master_post(emp_obj["post"]):
+                                    hrs = float(day_hours_map.get(emp_full_name, 11.0))
+                                    base_r = get_rate_for(emp_obj["post"], emp_obj.get("grade", ""))
+                                    if ws_emp.cell(row=day + 1, column=3).data_type != 'f':
+                                        ws_emp.cell(row=day + 1, column=3, value=calc_master_shift_pay(base_r, hrs))
+                                    ws_emp.cell(row=day + 1, column=4, value=1)
                                 else:
-                                    ws_emp.cell(row=day + 1, column=4, value=round(actual_pct / 100.0, 4))
+                                    default_pct = brigade_pct if emp_obj.get("pay_type") == "По коэффициенту бригады" else 100.0
+                                    actual_pct = float(day_emp_pcts.get(emp_full_name, default_pct))
 
-                        # Запись дневного тоннажа в файл операторов (лист "тоннаж" / "рубкг")
-                        if day_str in st.session_state.tonnage and "тоннаж" in wb_pf.sheetnames:
-                            wb_pf["тоннаж"].cell(row=day + 1, column=2, value=st.session_state.tonnage[day_str])
+                                    if "Общий" in wb_pf.sheetnames and abs(actual_pct - brigade_pct) < 0.001 and emp_obj.get("pay_type") == "По коэффициенту бригады":
+                                        ws_emp.cell(row=day + 1, column=4, value=f"=Общий!B{day + 1}")
+                                    else:
+                                        ws_emp.cell(row=day + 1, column=4, value=round(actual_pct / 100.0, 4))
+
+                        # Запись дневного тоннажа
+                        if day_str in st.session_state.tonnage:
+                            if "тоннаж" in wb_pf.sheetnames:
+                                wb_pf["тоннаж"].cell(row=day + 1, column=2, value=st.session_state.tonnage[day_str])
+                            elif dept_id == "chicken_deboning" and "рубкг" in wb_pf.sheetnames:
+                                if wb_pf["рубкг"].cell(row=day + 1, column=8).data_type != 'f':
+                                    wb_pf["рубкг"].cell(row=day + 1, column=8, value=st.session_state.tonnage[day_str])
 
                     if "Итог" in wb_pf.sheetnames:
                         ws_it = wb_pf["Итог"]
@@ -610,13 +749,13 @@ def generate_and_download(status_container):
 
                     buf = io.BytesIO()
                     wb_pf.save(buf)
-                    zf.writestr(f"Табель_{sub_name}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                    zf.writestr(f"Табель_{sub_name}_{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
                     del wb_pf
                     gc.collect()
 
-                # Генерация 2 файлов Показателей разделки (Обвалка и Жиловка)
+                # Генерация файлов Показателей разделки
                 status_container.write("Обрабатываем Показатели разделки...")
-                for sub_name, tpl_pokaz_name in MAIN_DEBONING_POKAZ.items():
+                for sub_name, tpl_pokaz_name in pokaz_map.items():
                     if not os.path.exists(tpl_pokaz_name):
                         status_container.write(f"⚠️ Файл {tpl_pokaz_name} не найден, пропускаем.")
                         continue
@@ -641,11 +780,16 @@ def generate_and_download(status_container):
                             )
                             rem_val = int(st.session_state.emp_remarks.get(d_str, {}).get(emp["full_name"], 0))
                             if ws_pk.cell(row=day_num + 1, column=2).data_type != 'f':
-                                ws_pk.cell(row=day_num + 1, column=2).value = rem_val if is_working else None
+                                ws_pk.cell(row=day_num + 1, column=2).value = rem_val if (is_working and rem_val > 0) else None
+
+                            if dept_id == "chicken_deboning" and sub_name == "Жиловка" and ws_pk.max_column >= 3:
+                                rem_val_2 = int(st.session_state.emp_remarks_2.get(d_str, {}).get(emp["full_name"], 0))
+                                if ws_pk.cell(row=day_num + 1, column=3).data_type != 'f':
+                                    ws_pk.cell(row=day_num + 1, column=3).value = rem_val_2 if (is_working and rem_val_2 > 0) else None
 
                     buf = io.BytesIO()
                     wb_pk.save(buf)
-                    zf.writestr(f"Показатели_разделки_{sub_name}_{m_name}_{y_val}.xlsx", buf.getvalue())
+                    zf.writestr(f"Показатели_разделки_{sub_name}_{prefix}_{m_name}_{y_val}.xlsx", buf.getvalue())
                     del wb_pk
                     gc.collect()
 
@@ -665,9 +809,13 @@ def generate_and_download(status_container):
                     if s_name not in ("Итог", "рубкг", tpl_pf_sheet):
                         del wb_pf[s_name]
 
+                roster_map = {e["full_name"]: e for e in st.session_state.staff_roster}
+
                 for emp in st.session_state.staff_roster:
                     sheet_name = emp["full_name"][:31]
                     rate_val = get_rate_for(emp["post"], emp.get("grade", ""))
+                    if is_master_post(emp["post"]):
+                        rate_val = calc_master_shift_pay(rate_val, 11.0)
                     if sheet_name not in wb_pf.sheetnames and tpl_pf_sheet in wb_pf.sheetnames:
                         new_ws = wb_pf.copy_worksheet(wb_pf[tpl_pf_sheet])
                         new_ws.title = sheet_name
@@ -684,6 +832,7 @@ def generate_and_download(status_container):
                     day = int(day_str)
                     timesheet_emps = data.get("timesheet", [])
                     graph_only_emps = data.get("graph_only", {})
+                    day_hours_map = st.session_state.emp_hours.get(day_str, {})
 
                     for emp_full_name in timesheet_emps:
                         if emp_full_name in graph_only_emps:
@@ -691,6 +840,12 @@ def generate_and_download(status_container):
                         sheet_name = emp_full_name[:31]
                         if sheet_name in wb_pf.sheetnames:
                             wb_pf[sheet_name].cell(row=day + 1, column=2, value=1)
+                            emp_obj = roster_map.get(emp_full_name)
+                            if emp_obj and is_master_post(emp_obj["post"]):
+                                hrs = float(day_hours_map.get(emp_full_name, 11.0))
+                                base_r = get_rate_for(emp_obj["post"], emp_obj.get("grade", ""))
+                                if wb_pf[sheet_name].cell(row=day + 1, column=3).data_type != 'f':
+                                    wb_pf[sheet_name].cell(row=day + 1, column=3, value=calc_master_shift_pay(base_r, hrs))
 
                     if day_str in st.session_state.tonnage and "рубкг" in wb_pf.sheetnames:
                         wb_pf["рубкг"].cell(row=day + 1, column=6, value=st.session_state.tonnage[day_str])
@@ -789,7 +944,12 @@ def generate_and_download(status_container):
                 for day_str, data in st.session_state.shifts.items():
                     day = int(day_str)
                     col_idx = 3 + day
-                    hours = 8 if "грузчик" in emp["post"].lower() or "подсобный" in emp["post"].lower() else 11
+                    day_hours_map = st.session_state.emp_hours.get(day_str, {})
+                    if is_master_post(emp["post"]):
+                        hrs_val = float(day_hours_map.get(emp["full_name"], 11.0))
+                        hours = int(hrs_val) if hrs_val.is_integer() else hrs_val
+                    else:
+                        hours = 8 if "грузчик" in emp["post"].lower() or "подсобный" in emp["post"].lower() else 11
 
                     if emp["full_name"] in data.get("graph_only", {}):
                         dept_name = data["graph_only"][emp["full_name"]]
@@ -812,8 +972,12 @@ def generate_and_download(status_container):
 
             # 5.3. ПОДРАБОТЧИКИ
             status_container.write("Обрабатываем Подработчиков...")
-            if dept_id == "formovka":
-                for group_name, file_name in FORMOVKA_SUBS.items():
+            if dept_id in ("formovka", "chicken_deboning"):
+                sub_files_map = FORMOVKA_SUBS if dept_id == "formovka" else CHICKEN_DEBONING_SUBS
+                sum_cell_ref = "E33" if dept_id == "chicken_deboning" else "J33"
+                sub_skip = {"Итог", "Общий"}
+
+                for group_name, file_name in sub_files_map.items():
                     if not os.path.exists(file_name):
                         status_container.write(f"⚠️ Файл {file_name} не найден, пропускаем.")
                         continue
@@ -826,10 +990,10 @@ def generate_and_download(status_container):
                         wb_sub = load_workbook(io.BytesIO(f.read()), keep_vba=True)
 
                     wb_sub.calculation.fullCalcOnLoad = True
-                    tpl_sub_sheet = next((s for s in wb_sub.sheetnames if s != "Итог"), None)
+                    tpl_sub_sheet = next((s for s in wb_sub.sheetnames if s not in sub_skip), None)
 
                     for s in list(wb_sub.sheetnames):
-                        if s not in ("Итог", tpl_sub_sheet):
+                        if s not in sub_skip and s != tpl_sub_sheet:
                             del wb_sub[s]
 
                     subs_by_fio = {}
@@ -843,10 +1007,14 @@ def generate_and_download(status_container):
                                     new_ws.cell(row=r, column=2).value = None
                                 if new_ws.cell(row=r, column=3).data_type != 'f':
                                     new_ws.cell(row=r, column=3).value = None
+                                if dept_id == "chicken_deboning" and new_ws.cell(row=r, column=4).data_type != 'f':
+                                    new_ws.cell(row=r, column=4).value = 1
 
                         day = int(sub["date"].split(".")[0])
                         wb_sub[sheet_name].cell(row=day + 1, column=2, value=1)
                         wb_sub[sheet_name].cell(row=day + 1, column=3, value=sub["amount"])
+                        if dept_id == "chicken_deboning" and wb_sub[sheet_name].cell(row=day + 1, column=4).data_type != 'f':
+                            wb_sub[sheet_name].cell(row=day + 1, column=4, value=1)
 
                         if sheet_name not in subs_by_fio:
                             subs_by_fio[sheet_name] = {"amount": 0.0, "shifts": 0}
@@ -871,7 +1039,7 @@ def generate_and_download(status_container):
                             r = 2 + i
                             if r < itogo_row:
                                 ws_it.cell(row=r, column=1, value=fio)
-                                ws_it.cell(row=r, column=2, value=f"='{fio}'!J33")
+                                ws_it.cell(row=r, column=2, value=f"='{fio}'!{sum_cell_ref}")
                                 ws_it.cell(row=r, column=3, value=f"='{fio}'!B33")
 
                         if itogo_row < 50:
@@ -880,7 +1048,7 @@ def generate_and_download(status_container):
 
                     buf = io.BytesIO()
                     wb_sub.save(buf)
-                    zf.writestr(f"Подработка_{group_name}_{m_name}_{y_val}.xlsm", buf.getvalue())
+                    zf.writestr(f"Подработка_{group_name}_{prefix}_{m_name}_{y_val}.xlsm", buf.getvalue())
                     del wb_sub
                     gc.collect()
             else:
@@ -1005,7 +1173,7 @@ def generate_and_download(status_container):
         return None
 
 # ==========================================
-# 6. ИНТЕРФЕЙС (SIDEBAR)
+# 6. ИНТЕРФЕЙС (SIDEBAR И АВТОРИЗАЦИЯ ПО PIN)
 # ==========================================
 st.sidebar.title("🏭 Выбор отделения")
 dept_options = [""] + list(DEPARTMENTS.keys())
@@ -1034,6 +1202,8 @@ if selected_dept != st.session_state.current_dept:
     st.session_state.brigade_percents = {}
     st.session_state.emp_percents = {}
     st.session_state.emp_remarks = {}
+    st.session_state.emp_remarks_2 = {}
+    st.session_state.emp_hours = {}
     if selected_dept:
         load_global_settings()
     st.rerun()
@@ -1041,6 +1211,22 @@ if selected_dept != st.session_state.current_dept:
 if not st.session_state.current_dept:
     st.title("🏭 Учёт выработки")
     st.info("👈 Пожалуйста, выберите ваше отделение в левой панели, чтобы начать работу.")
+    st.stop()
+
+# Проверка 4-значного пароля доступа в выбранное отделение
+required_pin = DEPT_PASSWORDS.get(st.session_state.current_dept, "")
+if required_pin and required_pin not in st.session_state.unlocked_pins:
+    st.title(f"🔒 {DEPARTMENTS[st.session_state.current_dept]} — Вход по паролю")
+    st.info("Введите 4-значный код доступа вашего подразделения.")
+    col_p1, col_p2 = st.columns([2, 3])
+    with col_p1:
+        entered_pin = st.text_input("Пароль (4 цифры)", type="password", max_chars=4, key=f"pin_input_{st.session_state.current_dept}")
+        if st.button("🔓 Войти в отделение", type="primary"):
+            if entered_pin.strip() == required_pin:
+                st.session_state.unlocked_pins.append(required_pin)
+                st.rerun()
+            else:
+                st.error("❌ Неверный пароль! Проверьте 4-значный код вашего цеха.")
     st.stop()
 
 st.sidebar.markdown("---")
@@ -1117,6 +1303,8 @@ with tab0:
                     st.session_state.brigade_percents = {}
                     st.session_state.emp_percents = {}
                     st.session_state.emp_remarks = {}
+                    st.session_state.emp_remarks_2 = {}
+                    st.session_state.emp_hours = {}
                     st.session_state.active_month = new_month
                     st.session_state.active_year = str(new_year)
                     st.session_state.current_id = record_id
@@ -1127,7 +1315,9 @@ with tab0:
                         "subordinates": [],
                         "brigade_percents": {},
                         "emp_percents": {},
-                        "emp_remarks": {}
+                        "emp_remarks": {},
+                        "emp_remarks_2": {},
+                        "emp_hours": {}
                     })
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
@@ -1143,11 +1333,13 @@ with tab1:
         st.info("👈 Сначала создайте месяц.")
     else:
         st.subheader("Отметка смен")
-        st.info("Если сотрудник работает в своем отделе — ставьте «Смена». Если он ушел на подработку в другой цех — ставьте «Подработка» (и укажите цех), чтобы он попал в график, но не попал в табель.")
+        st.info("Если сотрудник работает в своем отделе — ставьте «Смена» (для Мастеров дополнительно указывается количество отработанных часов, расчет идет от сменной ставки за 11 часов). Если ушел на подработку в другой цех — ставьте «Подработка» и укажите цех.")
 
-        is_main_deb = (st.session_state.current_dept == "main_deboning")
+        cur_dept = st.session_state.current_dept
+        is_deb = is_deboning_dept(cur_dept)
+        is_chicken = (cur_dept == "chicken_deboning")
 
-        if is_main_deb:
+        if is_deb:
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 shift_date = st.date_input("Дата смены", datetime.date.today())
@@ -1190,14 +1382,30 @@ with tab1:
                 )
 
         st.markdown("**Кого отметить?**")
-        if is_main_deb:
-            h1, h2, h3, h4, h5, h6 = st.columns([3.5, 1.1, 1.3, 1.2, 1.4, 2.5])
+        if is_chicken:
+            h1, h2, h3, h4, h5, h6, h7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
             h1.caption("Сотрудник")
             h2.caption("Смена")
-            h3.caption("Процент (%)")
+            h3.caption("Процент (%) / Часы")
+            h4.caption("Зам. (Кости)")
+            h5.caption("Зам. (Хрящи)")
+            h6.caption("Подработка")
+            h7.caption("Цех подработки")
+        elif cur_dept == "main_deboning":
+            h1, h2, h3, h4, h5, h6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
+            h1.caption("Сотрудник")
+            h2.caption("Смена")
+            h3.caption("Процент (%) / Часы")
             h4.caption("Замечания")
             h5.caption("Подработка")
             h6.caption("Цех подработки")
+        else:
+            h1, h2, h3, h4, h5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
+            h1.caption("Сотрудник")
+            h2.caption("Смена")
+            h3.caption("Часы (Мастер)")
+            h4.caption("Подработка")
+            h5.caption("Цех подработки")
 
         selected = {}
         day_saved_shifts = st.session_state.shifts.get(day_key_preview, {})
@@ -1207,6 +1415,8 @@ with tab1:
             day_saved_go = {n: "" for n in day_saved_go}
         day_saved_emp_pct = st.session_state.emp_percents.get(day_key_preview, {})
         day_saved_emp_rem = st.session_state.emp_remarks.get(day_key_preview, {})
+        day_saved_emp_rem2 = st.session_state.emp_remarks_2.get(day_key_preview, {})
+        day_saved_emp_hrs = st.session_state.emp_hours.get(day_key_preview, {})
 
         for emp in st.session_state.staff_roster:
             label = f"{emp['short_name']} — {emp['post']}"
@@ -1215,12 +1425,168 @@ with tab1:
             if "subgroup" in emp:
                 label += f" [{emp['subgroup']}]"
 
+            emp_is_master = is_master_post(emp["post"])
             default_main = emp["full_name"] in day_saved_ts
             default_other = emp["full_name"] in day_saved_go
             default_dept = day_saved_go.get(emp["full_name"], "")
+            default_hrs = float(day_saved_emp_hrs.get(emp["full_name"], 11.0))
 
-            if is_main_deb:
-                col1, col2, col3, col4, col5, col6 = st.columns([3.5, 1.1, 1.3, 1.2, 1.4, 2.5])
+            if is_deb:
+                if emp["full_name"] in day_saved_emp_pct:
+                    init_pct = float(day_saved_emp_pct[emp["full_name"]])
+                elif emp.get("pay_type") == "По коэффициенту бригады":
+                    init_pct = pct_obvalka if emp.get("subgroup") == "Обвалка" else (
+                        pct_zhilovka if emp.get("subgroup") == "Жиловка" else 100.0
+                    )
+                else:
+                    init_pct = 100.0
+
+                if is_chicken:
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
+                    with col1:
+                        st.write(label)
+                    with col2:
+                        is_main = st.checkbox(
+                            "Смена",
+                            value=default_main,
+                            key=f"main_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
+                        )
+                    with col3:
+                        if emp_is_master:
+                            emp_hrs_val = st.number_input(
+                                "Часы",
+                                min_value=0.0,
+                                max_value=24.0,
+                                value=default_hrs,
+                                step=0.5,
+                                key=f"hrs_{day_key_preview}_{emp['full_name']}"
+                            )
+                            emp_pct_val = 100.0
+                        else:
+                            emp_pct_val = st.number_input(
+                                "%",
+                                min_value=0.0,
+                                max_value=300.0,
+                                value=float(init_pct),
+                                step=1.0,
+                                key=f"pct_{day_key_preview}_{emp['full_name']}",
+                                label_visibility="collapsed"
+                            )
+                            emp_hrs_val = 11.0
+                    with col4:
+                        emp_rem_val = st.number_input(
+                            "Кости",
+                            min_value=0,
+                            max_value=50,
+                            value=int(day_saved_emp_rem.get(emp["full_name"], 0)),
+                            step=1,
+                            key=f"rem_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
+                        )
+                    with col5:
+                        emp_rem_val_2 = st.number_input(
+                            "Хрящи",
+                            min_value=0,
+                            max_value=50,
+                            value=int(day_saved_emp_rem2.get(emp["full_name"], 0)),
+                            step=1,
+                            key=f"rem2_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
+                        )
+                    with col6:
+                        is_other = st.checkbox(
+                            "Подработка",
+                            value=default_other,
+                            key=f"other_{day_key_preview}_{emp['full_name']}"
+                        )
+                    with col7:
+                        dept_name = st.text_input(
+                            "Цех",
+                            value=default_dept,
+                            key=f"dept_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed",
+                            placeholder="Введите цех..."
+                        )
+                    selected[emp["full_name"]] = {
+                        "timesheet": is_main,
+                        "graph_only": is_other,
+                        "dept": dept_name,
+                        "pct": emp_pct_val,
+                        "remarks": emp_rem_val,
+                        "remarks_2": emp_rem_val_2,
+                        "hours": emp_hrs_val,
+                        "is_master": emp_is_master
+                    }
+                else:
+                    col1, col2, col3, col4, col5, col6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
+                    with col1:
+                        st.write(label)
+                    with col2:
+                        is_main = st.checkbox(
+                            "Смена",
+                            value=default_main,
+                            key=f"main_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
+                        )
+                    with col3:
+                        if emp_is_master:
+                            emp_hrs_val = st.number_input(
+                                "Часы",
+                                min_value=0.0,
+                                max_value=24.0,
+                                value=default_hrs,
+                                step=0.5,
+                                key=f"hrs_{day_key_preview}_{emp['full_name']}"
+                            )
+                            emp_pct_val = 100.0
+                        else:
+                            emp_pct_val = st.number_input(
+                                "%",
+                                min_value=0.0,
+                                max_value=300.0,
+                                value=float(init_pct),
+                                step=1.0,
+                                key=f"pct_{day_key_preview}_{emp['full_name']}",
+                                label_visibility="collapsed"
+                            )
+                            emp_hrs_val = 11.0
+                    with col4:
+                        emp_rem_val = st.number_input(
+                            "Зам.",
+                            min_value=0,
+                            max_value=50,
+                            value=int(day_saved_emp_rem.get(emp["full_name"], 0)),
+                            step=1,
+                            key=f"rem_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
+                        )
+                    with col5:
+                        is_other = st.checkbox(
+                            "Подработка",
+                            value=default_other,
+                            key=f"other_{day_key_preview}_{emp['full_name']}"
+                        )
+                    with col6:
+                        dept_name = st.text_input(
+                            "Цех",
+                            value=default_dept,
+                            key=f"dept_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed",
+                            placeholder="Введите цех..."
+                        )
+                    selected[emp["full_name"]] = {
+                        "timesheet": is_main,
+                        "graph_only": is_other,
+                        "dept": dept_name,
+                        "pct": emp_pct_val,
+                        "remarks": emp_rem_val,
+                        "remarks_2": 0,
+                        "hours": emp_hrs_val,
+                        "is_master": emp_is_master
+                    }
+            else:
+                col1, col2, col3, col4, col5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
                 with col1:
                     st.write(label)
                 with col2:
@@ -1231,41 +1597,26 @@ with tab1:
                         label_visibility="collapsed"
                     )
                 with col3:
-                    if emp["full_name"] in day_saved_emp_pct:
-                        init_pct = float(day_saved_emp_pct[emp["full_name"]])
-                    elif emp.get("pay_type") == "По коэффициенту бригады":
-                        init_pct = pct_obvalka if emp.get("subgroup") == "Обвалка" else (
-                            pct_zhilovka if emp.get("subgroup") == "Жиловка" else 100.0
+                    if emp_is_master:
+                        emp_hrs_val = st.number_input(
+                            "Часы",
+                            min_value=0.0,
+                            max_value=24.0,
+                            value=default_hrs,
+                            step=0.5,
+                            key=f"hrs_{day_key_preview}_{emp['full_name']}",
+                            label_visibility="collapsed"
                         )
                     else:
-                        init_pct = 100.0
-
-                    emp_pct_val = st.number_input(
-                        "%",
-                        min_value=0.0,
-                        max_value=300.0,
-                        value=float(init_pct),
-                        step=1.0,
-                        key=f"pct_{day_key_preview}_{emp['full_name']}",
-                        label_visibility="collapsed"
-                    )
+                        st.caption("—")
+                        emp_hrs_val = 11.0
                 with col4:
-                    emp_rem_val = st.number_input(
-                        "Зам.",
-                        min_value=0,
-                        max_value=50,
-                        value=int(day_saved_emp_rem.get(emp["full_name"], 0)),
-                        step=1,
-                        key=f"rem_{day_key_preview}_{emp['full_name']}",
-                        label_visibility="collapsed"
-                    )
-                with col5:
                     is_other = st.checkbox(
                         "Подработка",
                         value=default_other,
                         key=f"other_{day_key_preview}_{emp['full_name']}"
                     )
-                with col6:
+                with col5:
                     dept_name = st.text_input(
                         "Цех",
                         value=default_dept,
@@ -1278,36 +1629,9 @@ with tab1:
                     "timesheet": is_main,
                     "graph_only": is_other,
                     "dept": dept_name,
-                    "pct": emp_pct_val,
-                    "remarks": emp_rem_val
+                    "hours": emp_hrs_val,
+                    "is_master": emp_is_master
                 }
-            else:
-                col1, col2, col3, col4 = st.columns([4, 2, 2, 3])
-                with col1:
-                    st.write(label)
-                with col2:
-                    is_main = st.checkbox(
-                        "Смена",
-                        value=default_main,
-                        key=f"main_{day_key_preview}_{emp['full_name']}",
-                        label_visibility="collapsed"
-                    )
-                with col3:
-                    is_other = st.checkbox(
-                        "Подработка",
-                        value=default_other,
-                        key=f"other_{day_key_preview}_{emp['full_name']}"
-                    )
-                with col4:
-                    dept_name = st.text_input(
-                        "Цех",
-                        value=default_dept,
-                        key=f"dept_{day_key_preview}_{emp['full_name']}",
-                        label_visibility="collapsed",
-                        placeholder="Введите цех..."
-                    )
-
-                selected[emp["full_name"]] = {"timesheet": is_main, "graph_only": is_other, "dept": dept_name}
 
         if st.button("💾 Провести смену", type="primary"):
             day_str = str(shift_date.day)
@@ -1318,7 +1642,10 @@ with tab1:
             if isinstance(st.session_state.shifts[day_str]["graph_only"], list):
                 st.session_state.shifts[day_str]["graph_only"] = {n: "" for n in st.session_state.shifts[day_str]["graph_only"]}
 
-            if is_main_deb:
+            if day_str not in st.session_state.emp_hours:
+                st.session_state.emp_hours[day_str] = {}
+
+            if is_deb:
                 st.session_state.brigade_percents[day_str] = {
                     "obvalka": float(pct_obvalka),
                     "zhilovka": float(pct_zhilovka)
@@ -1327,6 +1654,8 @@ with tab1:
                     st.session_state.emp_percents[day_str] = {}
                 if day_str not in st.session_state.emp_remarks:
                     st.session_state.emp_remarks[day_str] = {}
+                if day_str not in st.session_state.emp_remarks_2:
+                    st.session_state.emp_remarks_2[day_str] = {}
 
             for emp_full_name, checks in selected.items():
                 if checks["timesheet"]:
@@ -1342,9 +1671,13 @@ with tab1:
                     if emp_full_name in st.session_state.shifts[day_str]["graph_only"]:
                         del st.session_state.shifts[day_str]["graph_only"][emp_full_name]
 
-                if is_main_deb:
+                if checks.get("is_master"):
+                    st.session_state.emp_hours[day_str][emp_full_name] = float(checks["hours"])
+
+                if is_deb:
                     st.session_state.emp_percents[day_str][emp_full_name] = float(checks["pct"])
                     st.session_state.emp_remarks[day_str][emp_full_name] = int(checks["remarks"])
+                    st.session_state.emp_remarks_2[day_str][emp_full_name] = int(checks.get("remarks_2", 0))
 
             if tonnage > 0:
                 st.session_state.tonnage[day_str] = float(tonnage)
@@ -1354,6 +1687,7 @@ with tab1:
 
         st.markdown("---")
         st.markdown("**Кто уже отмечен в этом месяце:**")
+        roster_lookup = {s["full_name"]: s for s in st.session_state.staff_roster}
         for day, data in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
             go_dict = data.get("graph_only", {})
             if isinstance(go_dict, list):
@@ -1363,26 +1697,38 @@ with tab1:
             for e in data.get("timesheet", []):
                 if e in go_dict:
                     continue
-                short_n = next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == e), e)
-                if is_main_deb:
+                emp_info = roster_lookup.get(e, {})
+                short_n = emp_info.get("short_name", e)
+                extra = []
+                if is_master_post(emp_info.get("post", "")):
+                    hrs_v = st.session_state.emp_hours.get(day, {}).get(e, 11.0)
+                    extra.append(f"{hrs_v:g} ч.")
+                elif is_deb:
                     pct_val = st.session_state.emp_percents.get(day, {}).get(e)
-                    rem_val = st.session_state.emp_remarks.get(day, {}).get(e, 0)
-                    extra = []
                     if pct_val is not None:
                         extra.append(f"{pct_val:g}%")
-                    if rem_val:
-                        extra.append(f"зам: {rem_val}")
-                    if extra:
-                        short_n += f" ({', '.join(extra)})"
+                if is_deb:
+                    rem_val = st.session_state.emp_remarks.get(day, {}).get(e, 0)
+                    rem_val2 = st.session_state.emp_remarks_2.get(day, {}).get(e, 0)
+                    if is_chicken:
+                        if rem_val:
+                            extra.append(f"кости: {rem_val}")
+                        if rem_val2:
+                            extra.append(f"хрящи: {rem_val2}")
+                    else:
+                        if rem_val:
+                            extra.append(f"зам: {rem_val}")
+                if extra:
+                    short_n += f" ({', '.join(extra)})"
                 timesheet_names.append(short_n)
 
             graph_names = []
             for name, dept in go_dict.items():
-                short_n = next((s["short_name"] for s in st.session_state.staff_roster if s["full_name"] == name), name)
+                short_n = roster_lookup.get(name, {}).get("short_name", name)
                 graph_names.append(f"{short_n}{f' (в {dept})' if dept else ''}")
 
             msg = f"**{day} число:** "
-            if is_main_deb and day in st.session_state.brigade_percents:
+            if is_deb and day in st.session_state.brigade_percents:
                 bp = st.session_state.brigade_percents[day]
                 msg += f"[Бригады: Обв {bp.get('obvalka', 100):g}%, Жил {bp.get('zhilovka', 100):g}%] "
             if timesheet_names:
@@ -1408,10 +1754,15 @@ with tab2:
 
             if st.session_state.current_dept == "formovka":
                 subgroup_val = st.selectbox("Куда вышел? (Подгруппа)", ["Грузчики", "Клипсатор", "Сосисочная линия"])
+            elif st.session_state.current_dept == "chicken_deboning":
+                subgroup_val = st.selectbox("Куда вышел? (Подгруппа)", ["Жиловка", "Грузчики"])
 
         with c2:
             sub_date = st.date_input("Дата")
-            amount = st.number_input("Сумма (руб)", min_value=0.0, value=4500.0, step=100.0)
+            default_sub_amt = 4300.0 if (st.session_state.current_dept == "chicken_deboning" and subgroup_val == "Грузчики") else (
+                4440.0 if (st.session_state.current_dept == "chicken_deboning" and subgroup_val == "Жиловка") else 4500.0
+            )
+            amount = st.number_input("Сумма (руб)", min_value=0.0, value=default_sub_amt, step=100.0)
 
         if st.button("💾 Добавить подработку", type="primary"):
             if not fio.strip():
@@ -1439,6 +1790,7 @@ with tab2:
 # ================= TAB 3: СТАВКИ =================
 with tab3:
     st.subheader(f"Справочник ставок ({DEPARTMENTS[st.session_state.current_dept]})")
+    st.caption("Примечание: для должности «Мастер» указывается ставка за стандартную 11-часовую смену (например, 7370 ₽) — при вводе фактических часов в табеле сумма пересчитается пропорционально (ставка / 11 × часы).")
 
     if not st.session_state.rates:
         st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
@@ -1446,7 +1798,7 @@ with tab3:
     df_rates = pd.DataFrame(st.session_state.rates)
     edited_rates = st.data_editor(
         df_rates, num_rows="dynamic", use_container_width=True,
-        column_config={"post": st.column_config.TextColumn("Должность", required=True), "grade": st.column_config.TextColumn("Разряд"), "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=100, format="%d ₽")},
+        column_config={"post": st.column_config.TextColumn("Должность", required=True), "grade": st.column_config.TextColumn("Разряд"), "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=10, format="%d ₽")},
         key="rates_editor"
     )
     if st.button("💾 Сохранить ставки", type="primary"):
@@ -1478,7 +1830,7 @@ with tab4:
             "pay_type": "Тип оплаты"
         })
 
-        if st.session_state.current_dept == "main_deboning" and "Тип оплаты" not in df_staff.columns:
+        if is_deboning_dept(st.session_state.current_dept) and "Тип оплаты" not in df_staff.columns:
             df_staff["Тип оплаты"] = "По коэффициенту бригады"
 
         column_config = {
@@ -1492,6 +1844,9 @@ with tab4:
             column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=FORMOVKA_SUBGROUPS, required=True)
         elif st.session_state.current_dept == "main_deboning":
             column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=MAIN_DEBONING_SUBGROUPS, required=True)
+            column_config["Тип оплаты"] = st.column_config.SelectboxColumn(options=PAY_TYPES_DEBONING, required=True)
+        elif st.session_state.current_dept == "chicken_deboning":
+            column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=CHICKEN_DEBONING_SUBGROUPS, required=True)
             column_config["Тип оплаты"] = st.column_config.SelectboxColumn(options=PAY_TYPES_DEBONING, required=True)
 
         edited_df = st.data_editor(
@@ -1511,7 +1866,7 @@ with tab4:
                     }
                     if st.session_state.current_dept == "formovka" and "Подгруппа" in row and pd.notna(row["Подгруппа"]):
                         new_emp["subgroup"] = str(row["Подгруппа"])
-                    elif st.session_state.current_dept == "main_deboning":
+                    elif is_deboning_dept(st.session_state.current_dept):
                         new_emp["subgroup"] = str(row["Подгруппа"]) if "Подгруппа" in row and pd.notna(row["Подгруппа"]) else "Обвалка"
                         new_emp["pay_type"] = str(row["Тип оплаты"]) if "Тип оплаты" in row and pd.notna(row["Тип оплаты"]) else "По коэффициенту бригады"
                     new_roster.append(new_emp)
