@@ -16,21 +16,230 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 ДИЗАЙН
+# 🎨 ДИЗАЙН: СКАНДИНАВСКИЙ ЦЕХ (NORDIC LIGHT)
 # ==========================================
 st.set_page_config(page_title="Учёт выработки", page_icon="🏭", layout="wide")
 
 custom_css = """
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #0F172A;
+    }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    .stTabs [data-baseweb="tab-list"] { gap: 30px; background-color: transparent; border-bottom: 2px solid #e5e7eb; padding-bottom: 0px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: transparent; border: none; font-weight: 500; font-size: 15px; }
-    .stTabs [aria-selected="true"] { color: #0055ff !important; border-bottom: 3px solid #0055ff !important; font-weight: 600; }
-    .stButton>button[kind="primary"] { background-color: #0055ff; color: white; border: none; border-radius: 6px; box-shadow: 0 2px 4px rgba(0, 85, 255, 0.2); }
-    .stButton>button[kind="primary"]:hover { background-color: #0044cc; color: white; }
-    .stButton>button { border-radius: 6px; border: 1px solid #d1d5db; }
-    [data-testid="stDataFrame"] { border-radius: 8px; border: 1px solid #e5e7eb; background-color: #ffffff; }
+
+    .stApp {
+        background-color: #F8FAFC;
+    }
+
+    /* Боковая панель */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid #E2E8F0;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        color: #0F172A;
+        letter-spacing: -0.01em;
+    }
+
+    /* Вкладки */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #F1F5F9;
+        padding: 5px;
+        border-radius: 10px;
+        border: 1px solid #E2E8F0;
+        margin-bottom: 16px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        background-color: transparent;
+        border: none;
+        border-radius: 7px;
+        color: #475569;
+        font-weight: 500;
+        font-size: 14px;
+        padding: 0 16px;
+        transition: all 0.15s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #0F172A;
+        background-color: rgba(255, 255, 255, 0.6);
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FFFFFF !important;
+        color: #2563EB !important;
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none;
+    }
+
+    /* Кнопки */
+    .stButton>button[kind="primary"] {
+        background-color: #2563EB;
+        color: #FFFFFF;
+        border: 1px solid #1D4ED8;
+        border-radius: 8px;
+        font-weight: 500;
+        padding: 0.45rem 1.1rem;
+        box-shadow: 0 1px 2px rgba(37, 99, 235, 0.18);
+        transition: all 0.15s ease;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #1D4ED8;
+        border-color: #1E40AF;
+        color: #FFFFFF;
+    }
+    .stButton>button {
+        border-radius: 8px;
+        border: 1px solid #CBD5E1;
+        background-color: #FFFFFF;
+        color: #1E293B;
+        font-weight: 500;
+    }
+    .stButton>button:hover {
+        border-color: #94A3B8;
+        background-color: #F8FAFC;
+    }
+
+    /* Карточки метрик */
+    [data-testid="stMetric"] {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 12px;
+        font-weight: 500;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 22px;
+        font-weight: 700;
+        color: #0F172A;
+    }
+
+    /* Поля ввода и таблицы */
+    [data-testid="stDataFrame"], .stTable {
+        border-radius: 10px;
+        border: 1px solid #E2E8F0;
+        background-color: #FFFFFF;
+        overflow: hidden;
+    }
+
+    /* Плашки подгрупп и статусов */
+    .nordic-header-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+    .nordic-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #0F172A;
+        margin: 0;
+        letter-spacing: -0.02em;
+    }
+    .nordic-subtitle {
+        font-size: 13px;
+        color: #64748B;
+        margin-top: 2px;
+    }
+    .nordic-period-badge {
+        background-color: #EFF6FF;
+        color: #1D4ED8;
+        border: 1px solid #BFDBFE;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .nordic-period-badge-empty {
+        background-color: #FEF3C7;
+        color: #B45309;
+        border: 1px solid #FDE68A;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .subgroup-banner {
+        background-color: #F1F5F9;
+        border-left: 3px solid #2563EB;
+        padding: 7px 14px;
+        border-radius: 0 8px 8px 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1E293B;
+        margin: 14px 0 8px 0;
+        letter-spacing: 0.01em;
+    }
+    .emp-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: #0F172A;
+        padding-top: 6px;
+    }
+    .emp-post {
+        font-size: 12px;
+        color: #64748B;
+        font-weight: 400;
+    }
+    .badge-shift {
+        display: inline-block;
+        background-color: #EFF6FF;
+        color: #1D4ED8;
+        border: 1px solid #BFDBFE;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 7px;
+        border-radius: 999px;
+        margin-left: 6px;
+    }
+    .badge-sub {
+        display: inline-block;
+        background-color: #FFF7ED;
+        color: #C2410C;
+        border: 1px solid #FED7AA;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 7px;
+        border-radius: 999px;
+        margin-left: 6px;
+    }
+    .log-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+        font-size: 13.5px;
+        line-height: 1.5;
+    }
+    .pin-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 14px;
+        padding: 28px 32px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        margin-top: 24px;
+    }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -643,7 +852,6 @@ def generate_and_download(status_container):
                         if s_name not in service_sheets and s_name != tpl_pf_sheet:
                             del wb_pf[s_name]
 
-                    # Заполняем дневные коэффициенты бригады на лист "Общий" (колонка B)
                     if "Общий" in wb_pf.sheetnames:
                         ws_common = wb_pf["Общий"]
                         for day_num in range(1, 32):
@@ -719,7 +927,6 @@ def generate_and_download(status_container):
                                     else:
                                         ws_emp.cell(row=day + 1, column=4, value=round(actual_pct / 100.0, 4))
 
-                        # Запись дневного тоннажа
                         if day_str in st.session_state.tonnage:
                             if "тоннаж" in wb_pf.sheetnames:
                                 wb_pf["тоннаж"].cell(row=day + 1, column=2, value=st.session_state.tonnage[day_str])
@@ -782,7 +989,7 @@ def generate_and_download(status_container):
                             if ws_pk.cell(row=day_num + 1, column=2).data_type != 'f':
                                 ws_pk.cell(row=day_num + 1, column=2).value = rem_val if (is_working and rem_val > 0) else None
 
-                            if dept_id == "chicken_deboning" and sub_name == "Жиловка" and ws_pk.max_column >= 3:
+                            if dept_id == "chicken_deboning" and ws_pk.max_column >= 3:
                                 rem_val_2 = int(st.session_state.emp_remarks_2.get(d_str, {}).get(emp["full_name"], 0))
                                 if ws_pk.cell(row=day_num + 1, column=3).data_type != 'f':
                                     ws_pk.cell(row=day_num + 1, column=3).value = rem_val_2 if (is_working and rem_val_2 > 0) else None
@@ -1175,9 +1382,9 @@ def generate_and_download(status_container):
 # ==========================================
 # 6. ИНТЕРФЕЙС (SIDEBAR И АВТОРИЗАЦИЯ ПО PIN)
 # ==========================================
-st.sidebar.title("🏭 Выбор отделения")
+st.sidebar.markdown("### 🏭 Производственный учёт")
 dept_options = [""] + list(DEPARTMENTS.keys())
-dept_labels = ["--- Выберите отделение ---"] + list(DEPARTMENTS.values())
+dept_labels = ["— Выберите отделение —"] + list(DEPARTMENTS.values())
 
 try:
     current_idx = dept_options.index(st.session_state.current_dept)
@@ -1185,7 +1392,7 @@ except ValueError:
     current_idx = 0
 
 selected_idx = st.sidebar.selectbox(
-    "В каком отделе вы работаете?",
+    "Подразделение",
     range(len(dept_options)),
     format_func=lambda x: dept_labels[x],
     index=current_idx
@@ -1209,76 +1416,116 @@ if selected_dept != st.session_state.current_dept:
     st.rerun()
 
 if not st.session_state.current_dept:
-    st.title("🏭 Учёт выработки")
-    st.info("👈 Пожалуйста, выберите ваше отделение в левой панели, чтобы начать работу.")
+    st.markdown("""
+    <div class="nordic-header-card">
+        <div>
+            <div class="nordic-title">🏭 Учёт выработки и табелирование</div>
+            <div class="nordic-subtitle">Выберите ваше подразделение в меню слева, чтобы начать работу</div>
+        </div>
+        <div class="nordic-period-badge-empty">Отделение не выбрано</div>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 # Проверка 4-значного пароля доступа в выбранное отделение
 required_pin = DEPT_PASSWORDS.get(st.session_state.current_dept, "")
 if required_pin and required_pin not in st.session_state.unlocked_pins:
-    st.title(f"🔒 {DEPARTMENTS[st.session_state.current_dept]} — Вход по паролю")
-    st.info("Введите 4-значный код доступа вашего подразделения.")
-    col_p1, col_p2 = st.columns([2, 3])
-    with col_p1:
-        entered_pin = st.text_input("Пароль (4 цифры)", type="password", max_chars=4, key=f"pin_input_{st.session_state.current_dept}")
-        if st.button("🔓 Войти в отделение", type="primary"):
+    _, mid_col, _ = st.columns([1.2, 1.6, 1.2])
+    with mid_col:
+        st.markdown(f"""
+        <div class="pin-card">
+            <div style="font-size: 28px; margin-bottom: 6px;">🔒</div>
+            <div style="font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 4px;">
+                {DEPARTMENTS[st.session_state.current_dept]}
+            </div>
+            <div style="font-size: 13.5px; color: #64748B; margin-bottom: 16px;">
+                Введите 4-значный PIN-код доступа вашего подразделения
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        entered_pin = st.text_input(
+            "PIN-код (4 цифры)",
+            type="password",
+            max_chars=4,
+            key=f"pin_input_{st.session_state.current_dept}",
+            placeholder="••••"
+        )
+        if st.button("Войти в подразделение", type="primary", use_container_width=True):
             if entered_pin.strip() == required_pin:
                 st.session_state.unlocked_pins.append(required_pin)
                 st.rerun()
             else:
-                st.error("❌ Неверный пароль! Проверьте 4-значный код вашего цеха.")
+                st.error("Неверный PIN-код. Проверьте код вашего подразделения.")
     st.stop()
 
 st.sidebar.markdown("---")
-st.sidebar.header("🗓️ Текущий период")
+st.sidebar.markdown("#### 🗓️ Период и выгрузка")
 if st.session_state.active_month:
-    st.sidebar.success(f"### {st.session_state.active_month} {st.session_state.active_year}")
+    st.sidebar.info(f"**Активный период:** {st.session_state.active_month} {st.session_state.active_year}")
 
-    if st.sidebar.button("⬇️ Сгенерировать и скачать файлы (ZIP)", type="primary", use_container_width=True):
+    if st.sidebar.button("⬇️ Сформировать отчеты (ZIP)", type="primary", use_container_width=True):
         with st.status("Формируем Excel-файлы...", expanded=True) as status:
             zip_data = generate_and_download(status)
             if zip_data:
                 status.update(label="✅ Файлы успешно сформированы!", state="complete", expanded=False)
-
                 zip_prefix = FILE_PREFIXES.get(st.session_state.current_dept, "Отчет")
-
                 st.sidebar.download_button(
-                    label="💾 Сохранить на компьютер",
+                    label="💾 Скачать ZIP-архив",
                     data=zip_data,
                     file_name=f"Итоги_{zip_prefix}_{st.session_state.active_month}_{st.session_state.active_year}.zip",
-                    mime="application/zip", use_container_width=True
+                    mime="application/zip",
+                    use_container_width=True
                 )
             else:
                 status.update(label="❌ Ошибка при создании файлов", state="error", expanded=True)
 else:
-    st.sidebar.warning("### Месяц не выбран\nСоздайте новый или выберите старый.")
+    st.sidebar.caption("Месяц не выбран — создайте новый или откройте из архива ниже.")
 
 st.sidebar.markdown("---")
 if supabase:
-    st.sidebar.subheader("📂 Открыть месяц")
+    st.sidebar.markdown("#### 📂 Архив месяцев")
     try:
         dept_id = st.session_state.current_dept
         res = supabase.table("app_data").select("id").neq("id", f"GLOBAL_SETTINGS_{dept_id}").execute()
         saved = [r["id"] for r in res.data if r["id"].endswith(f"_{dept_id}")]
         if saved:
             saved.sort(reverse=True)
-            sel = st.sidebar.selectbox("Выберите месяц", saved, format_func=lambda x: x.replace(f"_{dept_id}", "").replace("_", " "))
-            if st.sidebar.button("Загрузить", use_container_width=True):
+            sel = st.sidebar.selectbox(
+                "Сохраненные периоды",
+                saved,
+                format_func=lambda x: x.replace(f"_{dept_id}", "").replace("_", " "),
+                label_visibility="collapsed"
+            )
+            if st.sidebar.button("Открыть период", use_container_width=True):
                 if load_month_from_db(sel):
                     st.sidebar.success("Загружено!")
                     st.rerun()
         else:
-            st.sidebar.caption("Нет сохраненных месяцев для этого отдела.")
+            st.sidebar.caption("Нет сохраненных месяцев.")
     except Exception:
         pass
 
-st.title(f"📊 {DEPARTMENTS[st.session_state.current_dept]} — {st.session_state.active_month} {st.session_state.active_year}" if st.session_state.active_month else f"📊 {DEPARTMENTS[st.session_state.current_dept]} — Учёт выработки")
+# Шапка рабочей области
+period_badge_html = (
+    f'<div class="nordic-period-badge">📅 {st.session_state.active_month} {st.session_state.active_year}</div>'
+    if st.session_state.active_month
+    else '<div class="nordic-period-badge-empty">Период не выбран</div>'
+)
+st.markdown(f"""
+<div class="nordic-header-card">
+    <div>
+        <div class="nordic-title">{DEPARTMENTS[st.session_state.current_dept]}</div>
+        <div class="nordic-subtitle">Табелирование смен, расчёт выработки и формирование ведомостей</div>
+    </div>
+    {period_badge_html}
+</div>
+""", unsafe_allow_html=True)
 
 tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки", "👥 Кадры"])
 
 # ================= TAB 0: СОЗДАНИЕ =================
 with tab0:
-    st.subheader("Новый месяц")
+    st.subheader("Открытие нового расчетного периода")
     c1, c2 = st.columns(2)
     with c1:
         new_month = st.selectbox("Месяц", MONTHS_RU, index=datetime.date.today().month - 1)
@@ -1286,7 +1533,7 @@ with tab0:
         years_list = [str(y) for y in range(2024, 2036)]
         new_year = st.selectbox("Год", years_list, index=years_list.index(str(datetime.date.today().year)))
 
-    if st.button("✨ Создать месяц", type="primary"):
+    if st.button("✨ Создать расчетный месяц", type="primary"):
         dept_id = st.session_state.current_dept
         record_id = f"{new_month}_{new_year}_{dept_id}"
         if not supabase:
@@ -1330,15 +1577,13 @@ with tab0:
 # ================= TAB 1: ТАБЕЛЬ =================
 with tab1:
     if not st.session_state.active_month:
-        st.info("👈 Сначала создайте месяц.")
+        st.info("👈 Сначала создайте новый месяц или откройте существующий в левой панели.")
     else:
-        st.subheader("Отметка смен")
-        st.info("Если сотрудник работает в своем отделе — ставьте «Смена» (для Мастеров дополнительно указывается количество отработанных часов, расчет идет от сменной ставки за 11 часов). Если ушел на подработку в другой цех — ставьте «Подработка» и укажите цех.")
-
         cur_dept = st.session_state.current_dept
         is_deb = is_deboning_dept(cur_dept)
         is_chicken = (cur_dept == "chicken_deboning")
 
+        # Параметры смены (верхняя карточка)
         if is_deb:
             c1, c2, c3, c4 = st.columns(4)
             with c1:
@@ -1381,33 +1626,6 @@ with tab1:
                     step=1.0
                 )
 
-        st.markdown("**Кого отметить?**")
-        if is_chicken:
-            h1, h2, h3, h4, h5, h6, h7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
-            h1.caption("Сотрудник")
-            h2.caption("Смена")
-            h3.caption("Процент (%) / Часы")
-            h4.caption("Зам. (Кости)")
-            h5.caption("Зам. (Хрящи)")
-            h6.caption("Подработка")
-            h7.caption("Цех подработки")
-        elif cur_dept == "main_deboning":
-            h1, h2, h3, h4, h5, h6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
-            h1.caption("Сотрудник")
-            h2.caption("Смена")
-            h3.caption("Процент (%) / Часы")
-            h4.caption("Замечания")
-            h5.caption("Подработка")
-            h6.caption("Цех подработки")
-        else:
-            h1, h2, h3, h4, h5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
-            h1.caption("Сотрудник")
-            h2.caption("Смена")
-            h3.caption("Часы (Мастер)")
-            h4.caption("Подработка")
-            h5.caption("Цех подработки")
-
-        selected = {}
         day_saved_shifts = st.session_state.shifts.get(day_key_preview, {})
         day_saved_ts = day_saved_shifts.get("timesheet", [])
         day_saved_go = day_saved_shifts.get("graph_only", {})
@@ -1418,18 +1636,74 @@ with tab1:
         day_saved_emp_rem2 = st.session_state.emp_remarks_2.get(day_key_preview, {})
         day_saved_emp_hrs = st.session_state.emp_hours.get(day_key_preview, {})
 
+        # Карточки-метрики по выбранной дате и месяцу
+        active_main_cnt = len([x for x in day_saved_ts if x not in day_saved_go])
+        active_sub_cnt = len(day_saved_go)
+        month_total_tonnage = sum(float(v) for v in st.session_state.tonnage.values())
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("В основной смене", f"{active_main_cnt} чел.")
+        m2.metric("На подработке в др. цехах", f"{active_sub_cnt} чел.")
+        m3.metric("Тоннаж за смену", f"{tonnage:,.0f} кг".replace(",", " "))
+        m4.metric("Тоннаж за месяц", f"{month_total_tonnage:,.0f} кг".replace(",", " "))
+
+        st.markdown("")
+        f_col1, f_col2 = st.columns([2, 3])
+        with f_col1:
+            search_fio = st.text_input("🔍 Поиск сотрудника по фамилии", placeholder="Начните вводить фамилию...", label_visibility="collapsed")
+        with f_col2:
+            st.caption("«Смена» — сотрудник попадает в табель и график (для Мастера указываются часы от ставки за 11ч). «Подработка» — только в график с оранжевой меткой.")
+
+        if is_chicken:
+            h1, h2, h3, h4, h5, h6, h7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
+            h1.caption("СОТРУДНИК")
+            h2.caption("СМЕНА")
+            h3.caption("ПРОЦЕНТ / ЧАСЫ")
+            h4.caption("ЗАМ. (КОСТИ)")
+            h5.caption("ЗАМ. (ХРЯЩИ)")
+            h6.caption("ПОДРАБОТКА")
+            h7.caption("ЦЕХ ПОДРАБОТКИ")
+        elif cur_dept == "main_deboning":
+            h1, h2, h3, h4, h5, h6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
+            h1.caption("СОТРУДНИК")
+            h2.caption("СМЕНА")
+            h3.caption("ПРОЦЕНТ / ЧАСЫ")
+            h4.caption("ЗАМЕЧАНИЯ")
+            h5.caption("ПОДРАБОТКА")
+            h6.caption("ЦЕХ ПОДРАБОТКИ")
+        else:
+            h1, h2, h3, h4, h5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
+            h1.caption("СОТРУДНИК")
+            h2.caption("СМЕНА")
+            h3.caption("ЧАСЫ (МАСТЕР)")
+            h4.caption("ПОДРАБОТКА")
+            h5.caption("ЦЕХ ПОДРАБОТКИ")
+
+        selected = {}
+        last_subgroup = None
+
         for emp in st.session_state.staff_roster:
-            label = f"{emp['short_name']} — {emp['post']}"
-            if emp.get('grade') and emp['grade'] != "—":
-                label += f" ({emp['grade']})"
-            if "subgroup" in emp:
-                label += f" [{emp['subgroup']}]"
+            if search_fio.strip() and search_fio.strip().lower() not in emp["full_name"].lower():
+                continue
+
+            cur_sub = emp.get("subgroup")
+            if cur_sub and cur_sub != last_subgroup:
+                st.markdown(f'<div class="subgroup-banner">{cur_sub}</div>', unsafe_allow_html=True)
+                last_subgroup = cur_sub
 
             emp_is_master = is_master_post(emp["post"])
             default_main = emp["full_name"] in day_saved_ts
             default_other = emp["full_name"] in day_saved_go
             default_dept = day_saved_go.get(emp["full_name"], "")
             default_hrs = float(day_saved_emp_hrs.get(emp["full_name"], 11.0))
+
+            status_badge = ""
+            if default_other:
+                status_badge = '<span class="badge-sub">Подработка</span>'
+            elif default_main:
+                status_badge = '<span class="badge-shift">В смене</span>'
+
+            grade_txt = f" ({emp['grade']})" if emp.get('grade') and emp['grade'] != "—" else ""
+            emp_html = f'<div class="emp-label">{emp["short_name"]}{status_badge}<div class="emp-post">{emp["post"]}{grade_txt}</div></div>'
 
             if is_deb:
                 if emp["full_name"] in day_saved_emp_pct:
@@ -1444,7 +1718,7 @@ with tab1:
                 if is_chicken:
                     col1, col2, col3, col4, col5, col6, col7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
                     with col1:
-                        st.write(label)
+                        st.markdown(emp_html, unsafe_allow_html=True)
                     with col2:
                         is_main = st.checkbox(
                             "Смена",
@@ -1506,7 +1780,7 @@ with tab1:
                             value=default_dept,
                             key=f"dept_{day_key_preview}_{emp['full_name']}",
                             label_visibility="collapsed",
-                            placeholder="Введите цех..."
+                            placeholder="Куда ушел..."
                         )
                     selected[emp["full_name"]] = {
                         "timesheet": is_main,
@@ -1521,7 +1795,7 @@ with tab1:
                 else:
                     col1, col2, col3, col4, col5, col6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
                     with col1:
-                        st.write(label)
+                        st.markdown(emp_html, unsafe_allow_html=True)
                     with col2:
                         is_main = st.checkbox(
                             "Смена",
@@ -1573,7 +1847,7 @@ with tab1:
                             value=default_dept,
                             key=f"dept_{day_key_preview}_{emp['full_name']}",
                             label_visibility="collapsed",
-                            placeholder="Введите цех..."
+                            placeholder="Куда ушел..."
                         )
                     selected[emp["full_name"]] = {
                         "timesheet": is_main,
@@ -1588,7 +1862,7 @@ with tab1:
             else:
                 col1, col2, col3, col4, col5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
                 with col1:
-                    st.write(label)
+                    st.markdown(emp_html, unsafe_allow_html=True)
                 with col2:
                     is_main = st.checkbox(
                         "Смена",
@@ -1622,7 +1896,7 @@ with tab1:
                         value=default_dept,
                         key=f"dept_{day_key_preview}_{emp['full_name']}",
                         label_visibility="collapsed",
-                        placeholder="Введите цех..."
+                        placeholder="Куда ушел..."
                     )
 
                 selected[emp["full_name"]] = {
@@ -1633,7 +1907,8 @@ with tab1:
                     "is_master": emp_is_master
                 }
 
-        if st.button("💾 Провести смену", type="primary"):
+        st.markdown("")
+        if st.button("💾 Провести и сохранить смену", type="primary"):
             day_str = str(shift_date.day)
             if day_str not in st.session_state.shifts:
                 st.session_state.shifts[day_str] = {"timesheet": [], "graph_only": {}}
@@ -1686,8 +1961,9 @@ with tab1:
             st.rerun()
 
         st.markdown("---")
-        st.markdown("**Кто уже отмечен в этом месяце:**")
+        st.markdown("#### 📋 Журнал проведенных смен за месяц")
         roster_lookup = {s["full_name"]: s for s in st.session_state.staff_roster}
+        has_any_log = False
         for day, data in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
             go_dict = data.get("graph_only", {})
             if isinstance(go_dict, list):
@@ -1727,22 +2003,34 @@ with tab1:
                 short_n = roster_lookup.get(name, {}).get("short_name", name)
                 graph_names.append(f"{short_n}{f' (в {dept})' if dept else ''}")
 
-            msg = f"**{day} число:** "
+            if not timesheet_names and not graph_names:
+                continue
+            has_any_log = True
+
+            header_tag = f"<b>{day} число</b>"
             if is_deb and day in st.session_state.brigade_percents:
                 bp = st.session_state.brigade_percents[day]
-                msg += f"[Бригады: Обв {bp.get('obvalka', 100):g}%, Жил {bp.get('zhilovka', 100):g}%] "
+                header_tag += f" &nbsp;<span class='badge-shift'>Обв {bp.get('obvalka', 100):g}% · Жил {bp.get('zhilovka', 100):g}%</span>"
+            if day in st.session_state.tonnage and st.session_state.tonnage[day] > 0:
+                header_tag += f" &nbsp;<span style='color:#64748B; font-size:12px;'>({st.session_state.tonnage[day]:g} кг)</span>"
+
+            lines = [header_tag]
             if timesheet_names:
-                msg += f"Основная: {', '.join(timesheet_names)}. "
+                lines.append(f"<span style='color:#1E293B;'><b>Основная:</b> {', '.join(timesheet_names)}</span>")
             if graph_names:
-                msg += f"Подработка: {', '.join(graph_names)}."
-            st.write(msg)
+                lines.append(f"<span style='color:#C2410C;'><b>Подработка:</b> {', '.join(graph_names)}</span>")
+
+            st.markdown(f'<div class="log-card">{"<br>".join(lines)}</div>', unsafe_allow_html=True)
+
+        if not has_any_log:
+            st.caption("В этом месяце еще не проведено ни одной смены.")
 
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
 with tab2:
     if not st.session_state.active_month:
         st.info("👈 Сначала создайте месяц.")
     else:
-        st.subheader("Внесение подработки (Пофамильно)")
+        st.subheader("Внесение подработки (внешние сотрудники / пофамильно)")
         c1, c2 = st.columns(2)
 
         subgroup_val = None
@@ -1758,11 +2046,11 @@ with tab2:
                 subgroup_val = st.selectbox("Куда вышел? (Подгруппа)", ["Жиловка", "Грузчики"])
 
         with c2:
-            sub_date = st.date_input("Дата")
+            sub_date = st.date_input("Дата выхода")
             default_sub_amt = 4300.0 if (st.session_state.current_dept == "chicken_deboning" and subgroup_val == "Грузчики") else (
                 4440.0 if (st.session_state.current_dept == "chicken_deboning" and subgroup_val == "Жиловка") else 4500.0
             )
-            amount = st.number_input("Сумма (руб)", min_value=0.0, value=default_sub_amt, step=100.0)
+            amount = st.number_input("Сумма к выплате (руб)", min_value=0.0, value=default_sub_amt, step=100.0)
 
         if st.button("💾 Добавить подработку", type="primary"):
             if not fio.strip():
@@ -1778,19 +2066,26 @@ with tab2:
 
         st.markdown("---")
         if st.session_state.subordinates:
-            df_sub = pd.DataFrame(st.session_state.subordinates)
-            cols = ["short_name", "post", "grade", "date", "amount"]
-            if "subgroup" in df_sub.columns:
-                cols.insert(1, "subgroup")
+            df_sub = pd.DataFrame(st.session_state.subordinates).rename(columns={
+                "short_name": "ФИО",
+                "subgroup": "Подгруппа",
+                "post": "Должность",
+                "grade": "Разряд",
+                "date": "Дата",
+                "amount": "Сумма (₽)"
+            })
+            cols = ["ФИО", "Должность", "Разряд", "Дата", "Сумма (₽)"]
+            if "Подгруппа" in df_sub.columns:
+                cols.insert(1, "Подгруппа")
             if not df_sub.empty:
-                st.table(df_sub[cols])
+                st.dataframe(df_sub[cols], use_container_width=True, hide_index=True)
         else:
-            st.write("Пока нет записей.")
+            st.caption("Пока нет записей по внешним подработчикам.")
 
 # ================= TAB 3: СТАВКИ =================
 with tab3:
-    st.subheader(f"Справочник ставок ({DEPARTMENTS[st.session_state.current_dept]})")
-    st.caption("Примечание: для должности «Мастер» указывается ставка за стандартную 11-часовую смену (например, 7370 ₽) — при вводе фактических часов в табеле сумма пересчитается пропорционально (ставка / 11 × часы).")
+    st.subheader(f"Справочник ставок — {DEPARTMENTS[st.session_state.current_dept]}")
+    st.caption("Для должности «Мастер» указывается ставка за стандартную 11-часовую смену (например, 7370 ₽) — при вводе фактических часов в табеле сумма пересчитается пропорционально (ставка / 11 × часы).")
 
     if not st.session_state.rates:
         st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
@@ -1813,7 +2108,7 @@ with tab3:
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
-    st.subheader(f"Реестр сотрудников ({DEPARTMENTS[st.session_state.current_dept]})")
+    st.subheader(f"Штатное расписание — {DEPARTMENTS[st.session_state.current_dept]}")
     if st.session_state.staff_roster:
         all_grades = set()
         for r in st.session_state.rates:
