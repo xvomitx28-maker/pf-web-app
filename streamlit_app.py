@@ -16,9 +16,9 @@ from openpyxl.utils import get_column_letter
 from supabase import create_client, Client
 
 # ==========================================
-# 🎨 ДИЗАЙН: СКАНДИНАВСКИЙ ЦЕХ (NORDIC LIGHT)
+# ДИЗАЙН: СКАНДИНАВСКИЙ МИНИМАЛИЗМ (NORDIC LIGHT)
 # ==========================================
-st.set_page_config(page_title="Учёт выработки", page_icon="🏭", layout="wide")
+st.set_page_config(page_title="Учёт выработки", layout="wide")
 
 custom_css = """
 <style>
@@ -41,7 +41,7 @@ custom_css = """
         background-color: #FFFFFF;
         border-right: 1px solid #E2E8F0;
     }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4 {
         color: #0F172A;
         letter-spacing: -0.01em;
     }
@@ -63,7 +63,7 @@ custom_css = """
         color: #475569;
         font-weight: 500;
         font-size: 14px;
-        padding: 0 16px;
+        padding: 0 18px;
         transition: all 0.15s ease;
     }
     .stTabs [data-baseweb="tab"]:hover {
@@ -137,7 +137,7 @@ custom_css = """
         overflow: hidden;
     }
 
-    /* Убираем лишние внешние отступы у инпутов и чекбоксов внутри строк табеля */
+    /* Выравнивание виджетов в строках табеля */
     [data-testid="stHorizontalBlock"] [data-testid="stCheckbox"] {
         margin-top: 0px !important;
         margin-bottom: 0px !important;
@@ -150,12 +150,12 @@ custom_css = """
         margin-bottom: 0px !important;
     }
 
-    /* Плашки подгрупп и статусов */
+    /* Шапка и плашки */
     .nordic-header-card {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
         border-radius: 12px;
-        padding: 16px 20px;
+        padding: 18px 22px;
         margin-bottom: 18px;
         display: flex;
         justify-content: space-between;
@@ -163,7 +163,7 @@ custom_css = """
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     }
     .nordic-title {
-        font-size: 22px;
+        font-size: 21px;
         font-weight: 700;
         color: #0F172A;
         margin: 0;
@@ -172,7 +172,7 @@ custom_css = """
     .nordic-subtitle {
         font-size: 13px;
         color: #64748B;
-        margin-top: 2px;
+        margin-top: 3px;
     }
     .nordic-period-badge {
         background-color: #EFF6FF;
@@ -184,13 +184,13 @@ custom_css = """
         font-weight: 600;
     }
     .nordic-period-badge-empty {
-        background-color: #FEF3C7;
-        color: #B45309;
-        border: 1px solid #FDE68A;
+        background-color: #F1F5F9;
+        color: #475569;
+        border: 1px solid #CBD5E1;
         padding: 6px 14px;
         border-radius: 999px;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 500;
     }
     .subgroup-banner {
         background-color: #F1F5F9;
@@ -260,10 +260,24 @@ custom_css = """
     .pin-card {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
-        border-radius: 14px;
-        padding: 28px 32px;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+        border-radius: 12px;
+        padding: 24px 28px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
         margin-top: 24px;
+        margin-bottom: 12px;
+    }
+    .pin-tag {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #2563EB;
+        background-color: #EFF6FF;
+        border: 1px solid #BFDBFE;
+        padding: 3px 9px;
+        border-radius: 6px;
+        margin-bottom: 10px;
     }
 </style>
 """
@@ -302,7 +316,6 @@ FILE_PREFIXES = {
     "farshesozdanie": "Фаршесоставление"
 }
 
-# Специфичные настройки для Формовки
 FORMOVKA_SUBGROUPS = ["Формовка", "Клипсатор", "Сосисочная линия"]
 FORMOVKA_TABELS = {
     "Формовка": "tpl_tabel_formovka_formovka.xlsm",
@@ -315,7 +328,6 @@ FORMOVKA_SUBS = {
     "Сосисочная линия": "tpl_sub_formovka_line.xlsm"
 }
 
-# Специфичные настройки для Основной обвалки
 MAIN_DEBONING_SUBGROUPS = ["Обвалка", "Жиловка", "Операторы"]
 MAIN_DEBONING_TABELS = {
     "Обвалка": "tpl_tabel_main_deboning_obvalka.xlsm",
@@ -327,7 +339,6 @@ MAIN_DEBONING_POKAZ = {
     "Жиловка": "tpl_pokaz_main_deboning_zhilovka.xlsx"
 }
 
-# Специфичные настройки для Куриной обвалки
 CHICKEN_DEBONING_SUBGROUPS = ["Обвалка", "Жиловка"]
 CHICKEN_DEBONING_TABELS = {
     "Обвалка": "tpl_tabel_chicken_deboning_obvalka.xlsm",
@@ -338,7 +349,7 @@ CHICKEN_DEBONING_SUBS = {
     "Грузчики": "tpl_sub_chicken_deboning_gruzchiki.xlsm"
 }
 CHICKEN_DEBONING_POKAZ = {
-    "Жиловка": "tpl_pokaz_chicken_deboning_zhilovka.xlsx"
+    "Жиловка": "tpl_pokaz_chicken_deboning_zhilovka.xlsm"
 }
 
 PAY_TYPES_DEBONING = ["По коэффициенту бригады", "Фиксированный (100%)"]
@@ -776,7 +787,7 @@ def generate_and_download(status_container):
             if dept_id == "formovka":
                 for sub_name, tpl_pf_name in FORMOVKA_TABELS.items():
                     if not os.path.exists(tpl_pf_name):
-                        status_container.write(f"⚠️ Файл {tpl_pf_name} не найден, пропускаем.")
+                        status_container.write(f"Файл {tpl_pf_name} не найден, пропускаем.")
                         continue
 
                     with open(tpl_pf_name, "rb") as f:
@@ -864,7 +875,7 @@ def generate_and_download(status_container):
 
                 for sub_name, tpl_pf_name in tabels_map.items():
                     if not os.path.exists(tpl_pf_name):
-                        status_container.write(f"⚠️ Файл {tpl_pf_name} не найден, пропускаем.")
+                        status_container.write(f"Файл {tpl_pf_name} не найден, пропускаем.")
                         continue
 
                     with open(tpl_pf_name, "rb") as f:
@@ -989,7 +1000,7 @@ def generate_and_download(status_container):
                 status_container.write("Обрабатываем Показатели разделки...")
                 for sub_name, tpl_pokaz_name in pokaz_map.items():
                     if not os.path.exists(tpl_pokaz_name):
-                        status_container.write(f"⚠️ Файл {tpl_pokaz_name} не найден, пропускаем.")
+                        status_container.write(f"Файл {tpl_pokaz_name} не найден, пропускаем.")
                         continue
 
                     with open(tpl_pokaz_name, "rb") as f:
@@ -1108,15 +1119,16 @@ def generate_and_download(status_container):
                 del wb_pf
                 gc.collect()
 
-            # 5.2. ГРАФИК (ОДИН ДЛЯ ВСЕХ)
+            # 5.2. ГРАФИК (ОДИН ДЛЯ ВСЕХ с динамическим месяцем и листом)
             status_container.write("Обрабатываем График...")
             with open(tpl_gr_name, "rb") as f:
                 wb_gr = load_workbook(io.BytesIO(f.read()))
 
             ws_gr = wb_gr.active
             ws_gr['A1'] = m_name
+            sheet_title_str = f"{m_name} {y_val}"
             try:
-                ws_gr.title = f"{m_name} {y_val}"
+                ws_gr.title = sheet_title_str
             except Exception:
                 pass
 
@@ -1124,7 +1136,7 @@ def generate_and_download(status_container):
             num_days = calendar.monthrange(int(y_val), m_idx)[1]
 
             itogo_col = None
-            for c_idx in range(4, 50):
+            for c_idx in range(4, 55):
                 for r_idx in [1, 2, 3]:
                     val = str(ws_gr.cell(row=r_idx, column=c_idx).value or "").strip().upper()
                     if "ИТОГО" in val:
@@ -1134,14 +1146,14 @@ def generate_and_download(status_container):
                     break
 
             if not itogo_col:
-                itogo_col = 35
+                itogo_col = 3 + num_days + 1
                 ws_gr.cell(row=2, column=itogo_col, value="ИТОГО")
 
             block_r = 4
             for r in range(1, 20):
                 for c in range(1, 4):
                     cell_txt = str(ws_gr.cell(row=r, column=c).value or "").lower()
-                    if "отделение" in cell_txt or "обвалка" in cell_txt:
+                    if "отделение" in cell_txt or "обвалка" in cell_txt or "подготовки" in cell_txt:
                         block_r = r
                         break
                 if block_r > 4:
@@ -1152,9 +1164,13 @@ def generate_and_download(status_container):
                 ws_gr.cell(row=r_idx, column=itogo_col).fill = BLUE_FILL
 
             for d in range(1, 32):
-                ws_gr.cell(row=2, column=3 + d, value=d if d <= num_days else None)
+                col_idx = 3 + d
+                if d <= num_days:
+                    ws_gr.cell(row=2, column=col_idx, value=d)
+                else:
+                    ws_gr.cell(row=2, column=col_idx, value=None)
                 for r_idx in [1, 2, 3]:
-                    ws_gr.cell(row=r_idx, column=3 + d).fill = NO_FILL
+                    ws_gr.cell(row=r_idx, column=col_idx).fill = NO_FILL
 
             for r_idx in range(1, last_emp_row + 1):
                 for c_idx in [1, 2, 3]:
@@ -1166,7 +1182,7 @@ def generate_and_download(status_container):
                 ws_gr.cell(row=r, column=2, value=emp["full_name"])
                 ws_gr.cell(row=r, column=3, value=emp["post"])
 
-                for c_idx in range(4, 3 + num_days + 1):
+                for c_idx in range(4, 50):
                     cell = ws_gr.cell(row=r, column=c_idx)
                     cell.value = None
                     cell.fill = NO_FILL
@@ -1175,6 +1191,8 @@ def generate_and_download(status_container):
                 shifts_count = 0
                 for day_str, data in st.session_state.shifts.items():
                     day = int(day_str)
+                    if day > num_days:
+                        continue
                     col_idx = 3 + day
                     day_hours_map = st.session_state.emp_hours.get(day_str, {})
                     if is_master_post(emp["post"]):
@@ -1211,10 +1229,10 @@ def generate_and_download(status_container):
 
                 for group_name, file_name in sub_files_map.items():
                     if not os.path.exists(file_name):
-                        status_container.write(f"⚠️ Файл {file_name} не найден, пропускаем.")
+                        status_container.write(f"Файл {file_name} не найден, пропускаем.")
                         continue
 
-                    group_subs = [s for s in st.session_state.subordinates if s.get("subgroup") == group_name]
+                    group_subs = [s for s in st.session_state.subordinates if s.get("subgroup"] == group_name]
                     if not group_subs:
                         continue
 
@@ -1354,21 +1372,21 @@ def generate_and_download(status_container):
                     del wb_sub
                     gc.collect()
 
-            # 5.4. ВЕДОМОСТЬ ШАШИНОЙ
+            # 5.4. ВЕДОМОСТЬ ШАШИНОЙ (Маппинг по вашим точным названиям)
             status_container.write("Обрабатываем Ведомость Шашиной...")
             with open(tpl_sh_name, "rb") as f:
                 wb_sh = load_workbook(io.BytesIO(f.read()))
 
             sh_sheet_map = {
-                "pf": "ПФ",
-                "main_deboning": "Обвалка",
-                "chicken_deboning": "Куриная обвалка",
-                "offal": "ЛО",
-                "delicatessen": "ДО",
-                "formovka": "Формовка",
-                "farshesozdanie": "Фарши"
+                "pf": "пф",
+                "main_deboning": "обвалка",
+                "chicken_deboning": "птица",
+                "offal": "ло",
+                "delicatessen": "до",
+                "formovka": "формовка",
+                "farshesozdanie": "фарши"
             }
-            target_sh_name = sh_sheet_map.get(dept_id, "ПФ").strip().lower()
+            target_sh_name = sh_sheet_map.get(dept_id, "пф").strip().lower()
 
             actual_sheet_name = None
             for s_name in wb_sh.sheetnames:
@@ -1391,7 +1409,7 @@ def generate_and_download(status_container):
                     ws_sh.cell(row=r, column=8, value=sub["date"])
                     ws_sh.cell(row=r, column=9, value=sub["amount"])
             else:
-                status_container.write(f"⚠️ Лист '{target_sh_name}' не найден в файле Шашиной!")
+                status_container.write(f"Лист '{target_sh_name}' не найден в файле Шашиной.")
 
             buf = io.BytesIO()
             wb_sh.save(buf)
@@ -1407,7 +1425,7 @@ def generate_and_download(status_container):
 # ==========================================
 # 6. ИНТЕРФЕЙС (SIDEBAR И АВТОРИЗАЦИЯ ПО PIN)
 # ==========================================
-st.sidebar.markdown("### 🏭 Производственный учёт")
+st.sidebar.markdown("### Производственный учёт")
 dept_options = [""] + list(DEPARTMENTS.keys())
 dept_labels = ["— Выберите отделение —"] + list(DEPARTMENTS.values())
 
@@ -1444,7 +1462,7 @@ if not st.session_state.current_dept:
     st.markdown("""
     <div class="nordic-header-card">
         <div>
-            <div class="nordic-title">🏭 Учёт выработки и табелирование</div>
+            <div class="nordic-title">Учёт выработки и табелирование</div>
             <div class="nordic-subtitle">Выберите ваше подразделение в меню слева, чтобы начать работу</div>
         </div>
         <div class="nordic-period-badge-empty">Отделение не выбрано</div>
@@ -1459,11 +1477,11 @@ if required_pin and required_pin not in st.session_state.unlocked_pins:
     with mid_col:
         st.markdown(f"""
         <div class="pin-card">
-            <div style="font-size: 28px; margin-bottom: 6px;">🔒</div>
-            <div style="font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 4px;">
+            <div class="pin-tag">Доступ ограничен</div>
+            <div style="font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 6px;">
                 {DEPARTMENTS[st.session_state.current_dept]}
             </div>
-            <div style="font-size: 13.5px; color: #64748B; margin-bottom: 16px;">
+            <div style="font-size: 13.5px; color: #64748B;">
                 Введите 4-значный PIN-код доступа вашего подразделения
             </div>
         </div>
@@ -1484,31 +1502,31 @@ if required_pin and required_pin not in st.session_state.unlocked_pins:
     st.stop()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("#### 🗓️ Период и выгрузка")
+st.sidebar.markdown("#### Период и выгрузка")
 if st.session_state.active_month:
     st.sidebar.info(f"**Активный период:** {st.session_state.active_month} {st.session_state.active_year}")
 
-    if st.sidebar.button("⬇️ Сформировать отчеты (ZIP)", type="primary", use_container_width=True):
+    if st.sidebar.button("Сформировать отчеты (ZIP)", type="primary", use_container_width=True):
         with st.status("Формируем Excel-файлы...", expanded=True) as status:
             zip_data = generate_and_download(status)
             if zip_data:
-                status.update(label="✅ Файлы успешно сформированы!", state="complete", expanded=False)
+                status.update(label="Файлы успешно сформированы", state="complete", expanded=False)
                 zip_prefix = FILE_PREFIXES.get(st.session_state.current_dept, "Отчет")
                 st.sidebar.download_button(
-                    label="💾 Скачать ZIP-архив",
+                    label="Скачать ZIP-архив",
                     data=zip_data,
                     file_name=f"Итоги_{zip_prefix}_{st.session_state.active_month}_{st.session_state.active_year}.zip",
                     mime="application/zip",
                     use_container_width=True
                 )
             else:
-                status.update(label="❌ Ошибка при создании файлов", state="error", expanded=True)
+                status.update(label="Ошибка при создании файлов", state="error", expanded=True)
 else:
     st.sidebar.caption("Месяц не выбран — создайте новый или откройте из архива ниже.")
 
 st.sidebar.markdown("---")
 if supabase:
-    st.sidebar.markdown("#### 📂 Архив месяцев")
+    st.sidebar.markdown("#### Архив месяцев")
     try:
         dept_id = st.session_state.current_dept
         res = supabase.table("app_data").select("id").neq("id", f"GLOBAL_SETTINGS_{dept_id}").execute()
@@ -1523,16 +1541,15 @@ if supabase:
             )
             if st.sidebar.button("Открыть период", use_container_width=True):
                 if load_month_from_db(sel):
-                    st.sidebar.success("Загружено!")
+                    st.sidebar.success("Период загружен")
                     st.rerun()
         else:
             st.sidebar.caption("Нет сохраненных месяцев.")
     except Exception:
         pass
 
-# Шапка рабочей области
 period_badge_html = (
-    f'<div class="nordic-period-badge">📅 {st.session_state.active_month} {st.session_state.active_year}</div>'
+    f'<div class="nordic-period-badge">{st.session_state.active_month} {st.session_state.active_year}</div>'
     if st.session_state.active_month
     else '<div class="nordic-period-badge-empty">Период не выбран</div>'
 )
@@ -1546,7 +1563,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-tab0, tab1, tab2, tab3, tab4 = st.tabs(["✨ Создать месяц", "📅 Табель смен", "👷 Подработчики", "💰 Ставки", "👥 Кадры"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs(["Создать месяц", "Табель смен", "Подработчики", "Ставки", "Кадры"])
 
 # ================= TAB 0: СОЗДАНИЕ =================
 with tab0:
@@ -1558,7 +1575,7 @@ with tab0:
         years_list = [str(y) for y in range(2024, 2036)]
         new_year = st.selectbox("Год", years_list, index=years_list.index(str(datetime.date.today().year)))
 
-    if st.button("✨ Создать расчетный месяц", type="primary"):
+    if st.button("Создать расчетный месяц", type="primary"):
         dept_id = st.session_state.current_dept
         record_id = f"{new_month}_{new_year}_{dept_id}"
         if not supabase:
@@ -1567,7 +1584,7 @@ with tab0:
             try:
                 existing = supabase.table("app_data").select("id").eq("id", record_id).execute()
                 if existing.data:
-                    st.error(f"Месяц {new_month} {new_year} для этого отдела уже существует!")
+                    st.error(f"Месяц {new_month} {new_year} для этого отдела уже существует.")
                 else:
                     st.session_state.shifts = {}
                     st.session_state.tonnage = {}
@@ -1594,7 +1611,7 @@ with tab0:
                     data = {"id": record_id, "pf_base64": base64.b64encode(empty_payload.encode('utf-8')).decode("utf-8")}
                     supabase.table("app_data").insert(data).execute()
 
-                    st.success(f"✅ Месяц {new_month} {new_year} для отдела {DEPARTMENTS[dept_id]} создан!")
+                    st.success(f"Месяц {new_month} {new_year} для отдела «{DEPARTMENTS[dept_id]}» создан.")
                     st.rerun()
             except Exception as e:
                 st.error(f"Ошибка: {e}")
@@ -1602,13 +1619,12 @@ with tab0:
 # ================= TAB 1: ТАБЕЛЬ =================
 with tab1:
     if not st.session_state.active_month:
-        st.info("👈 Сначала создайте новый месяц или откройте существующий в левой панели.")
+        st.info("Сначала создайте новый месяц или откройте существующий в левой панели.")
     else:
         cur_dept = st.session_state.current_dept
         is_deb = is_deboning_dept(cur_dept)
         is_chicken = (cur_dept == "chicken_deboning")
 
-        # Параметры смены (верхняя карточка)
         if is_deb:
             c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
             with c1:
@@ -1661,7 +1677,6 @@ with tab1:
         day_saved_emp_rem2 = st.session_state.emp_remarks_2.get(day_key_preview, {})
         day_saved_emp_hrs = st.session_state.emp_hours.get(day_key_preview, {})
 
-        # Карточки-метрики по выбранной дате и месяцу
         active_main_cnt = len([x for x in day_saved_ts if x not in day_saved_go])
         active_sub_cnt = len(day_saved_go)
         month_total_tonnage = sum(float(v) for v in st.session_state.tonnage.values())
@@ -1674,9 +1689,9 @@ with tab1:
         st.markdown("")
         f_col1, f_col2 = st.columns([2, 3], vertical_alignment="center")
         with f_col1:
-            search_fio = st.text_input("🔍 Поиск сотрудника по фамилии", placeholder="Начните вводить фамилию...", label_visibility="collapsed")
+            search_fio = st.text_input("Поиск сотрудника по фамилии", placeholder="Поиск по фамилии...", label_visibility="collapsed")
         with f_col2:
-            st.caption("«Смена» — сотрудник попадает в табель и график (для Мастера указываются часы от ставки за 11ч). «Подработка» — только в график с оранжевой меткой.")
+            st.caption("«Смена» — сотрудник попадает в табель и график (для Мастера указываются часы от ставки за 11ч). «Подработка» — только в график.")
 
         st.markdown("")
         if is_chicken:
@@ -1941,7 +1956,7 @@ with tab1:
             st.markdown('<div class="row-divider"></div>', unsafe_allow_html=True)
 
         st.markdown("")
-        if st.button("💾 Провести и сохранить смену", type="primary"):
+        if st.button("Провести и сохранить смену", type="primary"):
             day_str = str(shift_date.day)
             if day_str not in st.session_state.shifts:
                 st.session_state.shifts[day_str] = {"timesheet": [], "graph_only": {}}
@@ -1990,11 +2005,11 @@ with tab1:
             if tonnage > 0:
                 st.session_state.tonnage[day_str] = float(tonnage)
             save_month_to_db()
-            st.success(f"Смена на {shift_date.strftime('%d.%m.%Y')} сохранена!")
+            st.success(f"Смена на {shift_date.strftime('%d.%m.%Y')} сохранена.")
             st.rerun()
 
         st.markdown("---")
-        st.markdown("#### 📋 Журнал проведенных смен за месяц")
+        st.markdown("#### Журнал проведенных смен за месяц")
         roster_lookup = {s["full_name"]: s for s in st.session_state.staff_roster}
         has_any_log = False
         for day, data in sorted(st.session_state.shifts.items(), key=lambda x: int(x[0])):
@@ -2061,7 +2076,7 @@ with tab1:
 # ================= TAB 2: ПОДРАБОТЧИКИ =================
 with tab2:
     if not st.session_state.active_month:
-        st.info("👈 Сначала создайте месяц.")
+        st.info("Сначала создайте месяц.")
     else:
         st.subheader("Внесение подработки (внешние сотрудники / пофамильно)")
         c1, c2 = st.columns(2)
@@ -2085,7 +2100,7 @@ with tab2:
             )
             amount = st.number_input("Сумма к выплате (руб)", min_value=0.0, value=default_sub_amt, step=100.0)
 
-        if st.button("💾 Добавить подработку", type="primary"):
+        if st.button("Добавить подработку", type="primary"):
             if not fio.strip():
                 st.error("Укажите ФИО")
             else:
@@ -2094,7 +2109,7 @@ with tab2:
                     new_sub["subgroup"] = subgroup_val
                 st.session_state.subordinates.append(new_sub)
                 save_month_to_db()
-                st.success("Подработка добавлена!")
+                st.success("Подработка добавлена.")
                 st.rerun()
 
         st.markdown("---")
@@ -2129,14 +2144,14 @@ with tab3:
         column_config={"post": st.column_config.TextColumn("Должность", required=True), "grade": st.column_config.TextColumn("Разряд"), "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=10, format="%d ₽")},
         key="rates_editor"
     )
-    if st.button("💾 Сохранить ставки", type="primary"):
+    if st.button("Сохранить ставки", type="primary"):
         new_rates = []
         for _, row in edited_rates.iterrows():
             if pd.notna(row["post"]) and str(row["post"]).strip() != "":
                 new_rates.append({"post": str(row["post"]).strip(), "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "", "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0})
         st.session_state.rates = new_rates
         save_global_settings()
-        st.success("✅ Ставки сохранены!")
+        st.success("Ставки сохранены.")
         st.rerun()
 
 # ================= TAB 4: КАДРЫ =================
@@ -2182,7 +2197,7 @@ with tab4:
             column_config=column_config,
             key="staff_editor"
         )
-        if st.button("💾 Сохранить штат", type="primary"):
+        if st.button("Сохранить штат", type="primary"):
             new_roster = []
             for _, row in edited_df.iterrows():
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
@@ -2200,7 +2215,7 @@ with tab4:
                     new_roster.append(new_emp)
             st.session_state.staff_roster = new_roster
             save_global_settings()
-            st.success("✅ Штат сохранен!")
+            st.success("Штат сохранен.")
             st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить из шаблона.")
