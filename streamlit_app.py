@@ -137,6 +137,19 @@ custom_css = """
         overflow: hidden;
     }
 
+    /* Убираем лишние внешние отступы у инпутов и чекбоксов внутри строк табеля */
+    [data-testid="stHorizontalBlock"] [data-testid="stCheckbox"] {
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+        display: flex;
+        align-items: center;
+    }
+    [data-testid="stHorizontalBlock"] [data-testid="stNumberInput"],
+    [data-testid="stHorizontalBlock"] [data-testid="stTextInput"] {
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+    }
+
     /* Плашки подгрупп и статусов */
     .nordic-header-card {
         background: #FFFFFF;
@@ -194,12 +207,24 @@ custom_css = """
         font-size: 14px;
         font-weight: 500;
         color: #0F172A;
-        padding-top: 6px;
+        line-height: 1.25;
+        margin: 0;
     }
     .emp-post {
         font-size: 12px;
         color: #64748B;
         font-weight: 400;
+        margin-top: 2px;
+    }
+    .row-divider {
+        border-bottom: 1px solid #E2E8F0;
+        margin: 4px 0 8px 0;
+    }
+    .empty-cell-dash {
+        color: #94A3B8;
+        font-size: 14px;
+        text-align: center;
+        padding: 6px 0;
     }
     .badge-shift {
         display: inline-block;
@@ -1585,7 +1610,7 @@ with tab1:
 
         # Параметры смены (верхняя карточка)
         if is_deb:
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
             with c1:
                 shift_date = st.date_input("Дата смены", datetime.date.today())
             day_key_preview = str(shift_date.day)
@@ -1614,7 +1639,7 @@ with tab1:
                     step=1.0
                 )
         else:
-            c1, c2 = st.columns(2)
+            c1, c2 = st.columns(2, vertical_alignment="bottom")
             with c1:
                 shift_date = st.date_input("Дата смены", datetime.date.today())
             day_key_preview = str(shift_date.day)
@@ -1647,14 +1672,15 @@ with tab1:
         m4.metric("Тоннаж за месяц", f"{month_total_tonnage:,.0f} кг".replace(",", " "))
 
         st.markdown("")
-        f_col1, f_col2 = st.columns([2, 3])
+        f_col1, f_col2 = st.columns([2, 3], vertical_alignment="center")
         with f_col1:
             search_fio = st.text_input("🔍 Поиск сотрудника по фамилии", placeholder="Начните вводить фамилию...", label_visibility="collapsed")
         with f_col2:
             st.caption("«Смена» — сотрудник попадает в табель и график (для Мастера указываются часы от ставки за 11ч). «Подработка» — только в график с оранжевой меткой.")
 
+        st.markdown("")
         if is_chicken:
-            h1, h2, h3, h4, h5, h6, h7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
+            h1, h2, h3, h4, h5, h6, h7 = st.columns([2.8, 0.7, 1.35, 1.15, 1.15, 1.15, 2.0], vertical_alignment="center")
             h1.caption("СОТРУДНИК")
             h2.caption("СМЕНА")
             h3.caption("ПРОЦЕНТ / ЧАСЫ")
@@ -1663,7 +1689,7 @@ with tab1:
             h6.caption("ПОДРАБОТКА")
             h7.caption("ЦЕХ ПОДРАБОТКИ")
         elif cur_dept == "main_deboning":
-            h1, h2, h3, h4, h5, h6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
+            h1, h2, h3, h4, h5, h6 = st.columns([3.2, 0.8, 1.45, 1.25, 1.25, 2.35], vertical_alignment="center")
             h1.caption("СОТРУДНИК")
             h2.caption("СМЕНА")
             h3.caption("ПРОЦЕНТ / ЧАСЫ")
@@ -1671,7 +1697,7 @@ with tab1:
             h5.caption("ПОДРАБОТКА")
             h6.caption("ЦЕХ ПОДРАБОТКИ")
         else:
-            h1, h2, h3, h4, h5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
+            h1, h2, h3, h4, h5 = st.columns([3.4, 0.9, 1.5, 1.4, 2.8], vertical_alignment="center")
             h1.caption("СОТРУДНИК")
             h2.caption("СМЕНА")
             h3.caption("ЧАСЫ (МАСТЕР)")
@@ -1703,7 +1729,10 @@ with tab1:
                 status_badge = '<span class="badge-shift">В смене</span>'
 
             grade_txt = f" ({emp['grade']})" if emp.get('grade') and emp['grade'] != "—" else ""
-            emp_html = f'<div class="emp-label">{emp["short_name"]}{status_badge}<div class="emp-post">{emp["post"]}{grade_txt}</div></div>'
+            role_hint = f"{emp['post']}{grade_txt}"
+            if emp_is_master:
+                role_hint += " · часы"
+            emp_html = f'<div class="emp-label">{emp["short_name"]}{status_badge}<div class="emp-post">{role_hint}</div></div>'
 
             if is_deb:
                 if emp["full_name"] in day_saved_emp_pct:
@@ -1716,7 +1745,7 @@ with tab1:
                     init_pct = 100.0
 
                 if is_chicken:
-                    col1, col2, col3, col4, col5, col6, col7 = st.columns([3.0, 0.9, 1.2, 1.0, 1.0, 1.2, 2.1])
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([2.8, 0.7, 1.35, 1.15, 1.15, 1.15, 2.0], vertical_alignment="center")
                     with col1:
                         st.markdown(emp_html, unsafe_allow_html=True)
                     with col2:
@@ -1734,7 +1763,8 @@ with tab1:
                                 max_value=24.0,
                                 value=default_hrs,
                                 step=0.5,
-                                key=f"hrs_{day_key_preview}_{emp['full_name']}"
+                                key=f"hrs_{day_key_preview}_{emp['full_name']}",
+                                label_visibility="collapsed"
                             )
                             emp_pct_val = 100.0
                         else:
@@ -1793,7 +1823,7 @@ with tab1:
                         "is_master": emp_is_master
                     }
                 else:
-                    col1, col2, col3, col4, col5, col6 = st.columns([3.5, 1.1, 1.4, 1.2, 1.3, 2.5])
+                    col1, col2, col3, col4, col5, col6 = st.columns([3.2, 0.8, 1.45, 1.25, 1.25, 2.35], vertical_alignment="center")
                     with col1:
                         st.markdown(emp_html, unsafe_allow_html=True)
                     with col2:
@@ -1811,7 +1841,8 @@ with tab1:
                                 max_value=24.0,
                                 value=default_hrs,
                                 step=0.5,
-                                key=f"hrs_{day_key_preview}_{emp['full_name']}"
+                                key=f"hrs_{day_key_preview}_{emp['full_name']}",
+                                label_visibility="collapsed"
                             )
                             emp_pct_val = 100.0
                         else:
@@ -1860,7 +1891,7 @@ with tab1:
                         "is_master": emp_is_master
                     }
             else:
-                col1, col2, col3, col4, col5 = st.columns([3.5, 1.2, 1.5, 1.8, 3.0])
+                col1, col2, col3, col4, col5 = st.columns([3.4, 0.9, 1.5, 1.4, 2.8], vertical_alignment="center")
                 with col1:
                     st.markdown(emp_html, unsafe_allow_html=True)
                 with col2:
@@ -1882,7 +1913,7 @@ with tab1:
                             label_visibility="collapsed"
                         )
                     else:
-                        st.caption("—")
+                        st.markdown('<div class="empty-cell-dash">—</div>', unsafe_allow_html=True)
                         emp_hrs_val = 11.0
                 with col4:
                     is_other = st.checkbox(
@@ -1906,6 +1937,8 @@ with tab1:
                     "hours": emp_hrs_val,
                     "is_master": emp_is_master
                 }
+
+            st.markdown('<div class="row-divider"></div>', unsafe_allow_html=True)
 
         st.markdown("")
         if st.button("💾 Провести и сохранить смену", type="primary"):
