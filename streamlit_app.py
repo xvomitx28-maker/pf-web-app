@@ -1232,7 +1232,7 @@ def generate_and_download(status_container):
                         status_container.write(f"Файл {file_name} не найден, пропускаем.")
                         continue
 
-                    group_subs = [s for s in st.session_state.subordinates if s.get("subgroup"] == group_name]
+                    group_subs = [s for s in st.session_state.subordinates if s.get("subgroup") == group_name]
                     if not group_subs:
                         continue
 
