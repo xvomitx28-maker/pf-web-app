@@ -2132,31 +2132,69 @@ with tab2:
 
 # ================= TAB 3: СТАВКИ =================
 with tab3:
-    st.subheader(f"Справочник ставок — {DEPARTMENTS[st.session_state.current_dept]}")
+    dept_id = st.session_state.current_dept
+    st.subheader(f"Справочник ставок — {DEPARTMENTS[dept_id]}")
     st.caption("Для должности «Мастер» указывается ставка за стандартную 11-часовую смену (например, 7370 ₽) — при вводе фактических часов в табеле сумма пересчитается пропорционально (ставка / 11 × часы).")
 
     if not st.session_state.rates:
         st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
 
-    df_rates = pd.DataFrame(st.session_state.rates)
+    df_rates = pd.DataFrame(st.session_state.rates).copy()
+    df_rates.insert(0, "Удалить", False)
+
     edited_rates = st.data_editor(
-        df_rates, num_rows="dynamic", use_container_width=True,
-        column_config={"post": st.column_config.TextColumn("Должность", required=True), "grade": st.column_config.TextColumn("Разряд"), "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=10, format="%d ₽")},
-        key="rates_editor"
+        df_rates,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Удалить": st.column_config.CheckboxColumn("Удалить", default=False, width="small"),
+            "post": st.column_config.TextColumn("Должность", required=True),
+            "grade": st.column_config.TextColumn("Разряд"),
+            "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=10, format="%d ₽")
+        },
+        key=f"rates_editor_{dept_id}"
     )
-    if st.button("Сохранить ставки", type="primary"):
-        new_rates = []
-        for _, row in edited_rates.iterrows():
-            if pd.notna(row["post"]) and str(row["post"]).strip() != "":
-                new_rates.append({"post": str(row["post"]).strip(), "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "", "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0})
-        st.session_state.rates = new_rates
-        save_global_settings()
-        st.success("Ставки сохранены.")
-        st.rerun()
+
+    r_btn1, r_btn2, _ = st.columns([1.4, 1.6, 3])
+    with r_btn1:
+        if st.button("Сохранить ставки", type="primary", use_container_width=True):
+            new_rates = []
+            for _, row in edited_rates.iterrows():
+                if bool(row.get("Удалить", False)):
+                    continue
+                if pd.notna(row["post"]) and str(row["post"]).strip() != "":
+                    new_rates.append({
+                        "post": str(row["post"]).strip(),
+                        "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
+                        "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
+                    })
+            st.session_state.rates = new_rates
+            save_global_settings()
+            st.success("Ставки сохранены.")
+            st.rerun()
+
+    with r_btn2:
+        if st.button("🗑️ Удалить отмеченные", key=f"del_rates_{dept_id}", use_container_width=True):
+            kept_rates = []
+            for _, row in edited_rates.iterrows():
+                if bool(row.get("Удалить", False)):
+                    continue
+                if pd.notna(row["post"]) and str(row["post"]).strip() != "":
+                    kept_rates.append({
+                        "post": str(row["post"]).strip(),
+                        "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
+                        "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
+                    })
+            st.session_state.rates = kept_rates
+            save_global_settings()
+            st.success("Отмеченные ставки удалены.")
+            st.rerun()
 
 # ================= TAB 4: КАДРЫ =================
 with tab4:
-    st.subheader(f"Штатное расписание — {DEPARTMENTS[st.session_state.current_dept]}")
+    dept_id = st.session_state.current_dept
+    st.subheader(f"Штатное расписание — {DEPARTMENTS[dept_id]}")
     if st.session_state.staff_roster:
         all_grades = set()
         for r in st.session_state.rates:
@@ -2171,35 +2209,44 @@ with tab4:
             "grade": "Разряд",
             "subgroup": "Подгруппа",
             "pay_type": "Тип оплаты"
-        })
+        }).copy()
 
-        if is_deboning_dept(st.session_state.current_dept) and "Тип оплаты" not in df_staff.columns:
+        if is_deboning_dept(dept_id) and "Тип оплаты" not in df_staff.columns:
             df_staff["Тип оплаты"] = "По коэффициенту бригады"
 
+        df_staff.insert(0, "Удалить", False)
+
         column_config = {
+            "Удалить": st.column_config.CheckboxColumn("Удалить", default=False, width="small"),
             "Полное ФИО": st.column_config.TextColumn(required=True),
             "Короткое ФИО": st.column_config.TextColumn(required=True),
             "Должность": st.column_config.SelectboxColumn(options=get_current_positions(), required=True),
             "Разряд": st.column_config.SelectboxColumn(options=grade_options)
         }
 
-        if st.session_state.current_dept == "formovka":
+        if dept_id == "formovka":
             column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=FORMOVKA_SUBGROUPS, required=True)
-        elif st.session_state.current_dept == "main_deboning":
+        elif dept_id == "main_deboning":
             column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=MAIN_DEBONING_SUBGROUPS, required=True)
             column_config["Тип оплаты"] = st.column_config.SelectboxColumn(options=PAY_TYPES_DEBONING, required=True)
-        elif st.session_state.current_dept == "chicken_deboning":
+        elif dept_id == "chicken_deboning":
             column_config["Подгруппа"] = st.column_config.SelectboxColumn(options=CHICKEN_DEBONING_SUBGROUPS, required=True)
             column_config["Тип оплаты"] = st.column_config.SelectboxColumn(options=PAY_TYPES_DEBONING, required=True)
 
         edited_df = st.data_editor(
-            df_staff, num_rows="dynamic", use_container_width=True,
+            df_staff,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
             column_config=column_config,
-            key="staff_editor"
+            key=f"staff_editor_{dept_id}"
         )
-        if st.button("Сохранить штат", type="primary"):
-            new_roster = []
-            for _, row in edited_df.iterrows():
+
+        def _extract_roster(df_to_parse):
+            res_list = []
+            for _, row in df_to_parse.iterrows():
+                if bool(row.get("Удалить", False)):
+                    continue
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
                     new_emp = {
                         "full_name": str(row["Полное ФИО"]).strip(),
@@ -2207,19 +2254,31 @@ with tab4:
                         "post": str(row["Должность"]).strip() if pd.notna(row["Должность"]) else get_current_positions()[0],
                         "grade": str(row["Разряд"]).strip() if pd.notna(row["Разряд"]) else "—"
                     }
-                    if st.session_state.current_dept == "formovka" and "Подгруппа" in row and pd.notna(row["Подгруппа"]):
+                    if dept_id == "formovka" and "Подгруппа" in row and pd.notna(row["Подгруппа"]):
                         new_emp["subgroup"] = str(row["Подгруппа"])
-                    elif is_deboning_dept(st.session_state.current_dept):
+                    elif is_deboning_dept(dept_id):
                         new_emp["subgroup"] = str(row["Подгруппа"]) if "Подгруппа" in row and pd.notna(row["Подгруппа"]) else "Обвалка"
                         new_emp["pay_type"] = str(row["Тип оплаты"]) if "Тип оплаты" in row and pd.notna(row["Тип оплаты"]) else "По коэффициенту бригады"
-                    new_roster.append(new_emp)
-            st.session_state.staff_roster = new_roster
-            save_global_settings()
-            st.success("Штат сохранен.")
-            st.rerun()
+                    res_list.append(new_emp)
+            return res_list
+
+        s_btn1, s_btn2, _ = st.columns([1.4, 1.6, 3])
+        with s_btn1:
+            if st.button("Сохранить штат", type="primary", use_container_width=True):
+                st.session_state.staff_roster = _extract_roster(edited_df)
+                save_global_settings()
+                st.success("Штат сохранен.")
+                st.rerun()
+
+        with s_btn2:
+            if st.button("🗑️ Удалить отмеченных", key=f"del_staff_{dept_id}", use_container_width=True):
+                st.session_state.staff_roster = _extract_roster(edited_df)
+                save_global_settings()
+                st.success("Отмеченные сотрудники удалены.")
+                st.rerun()
     else:
         st.write("Штат пуст. Нажмите кнопку ниже, чтобы загрузить из шаблона.")
         if st.button("Загрузить сотрудников из шаблона"):
-            st.session_state.staff_roster = load_initial_staff(st.session_state.current_dept)
+            st.session_state.staff_roster = load_initial_staff(dept_id)
             save_global_settings()
             st.rerun()
