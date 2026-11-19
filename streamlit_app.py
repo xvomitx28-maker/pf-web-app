@@ -2140,15 +2140,14 @@ with tab3:
         st.session_state.rates = [{"post": "", "grade": "", "rate": 0}]
 
     df_rates = pd.DataFrame(st.session_state.rates).copy()
-    df_rates.insert(0, "Удалить", False)
+    df_rates.insert(0, "Удал.", False)
 
     edited_rates = st.data_editor(
         df_rates,
-        num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Удалить": st.column_config.CheckboxColumn("Удалить", default=False, width="small"),
+            "Удал.": st.column_config.CheckboxColumn("Удал.", default=False, width=65),
             "post": st.column_config.TextColumn("Должность", required=True),
             "grade": st.column_config.TextColumn("Разряд"),
             "rate": st.column_config.NumberColumn("Ставка (руб)", min_value=0, step=10, format="%d ₽")
@@ -2156,37 +2155,37 @@ with tab3:
         key=f"rates_editor_{dept_id}"
     )
 
-    r_btn1, r_btn2, _ = st.columns([1.4, 1.6, 3])
+    def _parse_rates(df_to_parse):
+        res_rates = []
+        for _, row in df_to_parse.iterrows():
+            if bool(row.get("Удал.", False)):
+                continue
+            if pd.notna(row["post"]) and str(row["post"]).strip() != "":
+                res_rates.append({
+                    "post": str(row["post"]).strip(),
+                    "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
+                    "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
+                })
+        return res_rates
+
+    r_btn1, r_btn2, r_btn3, _ = st.columns([1.4, 1.5, 1.7, 2.4])
     with r_btn1:
         if st.button("Сохранить ставки", type="primary", use_container_width=True):
-            new_rates = []
-            for _, row in edited_rates.iterrows():
-                if bool(row.get("Удалить", False)):
-                    continue
-                if pd.notna(row["post"]) and str(row["post"]).strip() != "":
-                    new_rates.append({
-                        "post": str(row["post"]).strip(),
-                        "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
-                        "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
-                    })
-            st.session_state.rates = new_rates
+            st.session_state.rates = _parse_rates(edited_rates)
             save_global_settings()
             st.success("Ставки сохранены.")
             st.rerun()
 
     with r_btn2:
+        if st.button("➕ Добавить строку", key=f"add_rate_{dept_id}", use_container_width=True):
+            current = _parse_rates(edited_rates)
+            current.append({"post": "", "grade": "", "rate": 0})
+            st.session_state.rates = current
+            st.rerun()
+
+    with r_btn3:
         if st.button("🗑️ Удалить отмеченные", key=f"del_rates_{dept_id}", use_container_width=True):
-            kept_rates = []
-            for _, row in edited_rates.iterrows():
-                if bool(row.get("Удалить", False)):
-                    continue
-                if pd.notna(row["post"]) and str(row["post"]).strip() != "":
-                    kept_rates.append({
-                        "post": str(row["post"]).strip(),
-                        "grade": str(row["grade"]).strip() if pd.notna(row["grade"]) else "",
-                        "rate": int(row["rate"]) if pd.notna(row["rate"]) else 0
-                    })
-            st.session_state.rates = kept_rates
+            st.session_state.rates = _parse_rates(edited_rates)
             save_global_settings()
             st.success("Отмеченные ставки удалены.")
             st.rerun()
@@ -2214,10 +2213,10 @@ with tab4:
         if is_deboning_dept(dept_id) and "Тип оплаты" not in df_staff.columns:
             df_staff["Тип оплаты"] = "По коэффициенту бригады"
 
-        df_staff.insert(0, "Удалить", False)
+        df_staff.insert(0, "Удал.", False)
 
         column_config = {
-            "Удалить": st.column_config.CheckboxColumn("Удалить", default=False, width="small"),
+            "Удал.": st.column_config.CheckboxColumn("Удал.", default=False, width=65),
             "Полное ФИО": st.column_config.TextColumn(required=True),
             "Короткое ФИО": st.column_config.TextColumn(required=True),
             "Должность": st.column_config.SelectboxColumn(options=get_current_positions(), required=True),
@@ -2235,7 +2234,6 @@ with tab4:
 
         edited_df = st.data_editor(
             df_staff,
-            num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config=column_config,
@@ -2245,7 +2243,7 @@ with tab4:
         def _extract_roster(df_to_parse):
             res_list = []
             for _, row in df_to_parse.iterrows():
-                if bool(row.get("Удалить", False)):
+                if bool(row.get("Удал.", False)):
                     continue
                 if pd.notna(row["Полное ФИО"]) and str(row["Полное ФИО"]).strip() != "":
                     new_emp = {
@@ -2262,7 +2260,7 @@ with tab4:
                     res_list.append(new_emp)
             return res_list
 
-        s_btn1, s_btn2, _ = st.columns([1.4, 1.6, 3])
+        s_btn1, s_btn2, s_btn3, _ = st.columns([1.4, 1.6, 1.7, 2.3])
         with s_btn1:
             if st.button("Сохранить штат", type="primary", use_container_width=True):
                 st.session_state.staff_roster = _extract_roster(edited_df)
@@ -2271,6 +2269,24 @@ with tab4:
                 st.rerun()
 
         with s_btn2:
+            if st.button("➕ Добавить сотрудника", key=f"add_emp_{dept_id}", use_container_width=True):
+                current_roster = _extract_roster(edited_df)
+                blank_emp = {
+                    "full_name": "Новый сотрудник",
+                    "short_name": "Новый с.",
+                    "post": get_current_positions()[0],
+                    "grade": "—"
+                }
+                if dept_id == "formovka":
+                    blank_emp["subgroup"] = FORMOVKA_SUBGROUPS[0]
+                elif is_deboning_dept(dept_id):
+                    blank_emp["subgroup"] = "Обвалка"
+                    blank_emp["pay_type"] = "По коэффициенту бригады"
+                current_roster.append(blank_emp)
+                st.session_state.staff_roster = current_roster
+                st.rerun()
+
+        with s_btn3:
             if st.button("🗑️ Удалить отмеченных", key=f"del_staff_{dept_id}", use_container_width=True):
                 st.session_state.staff_roster = _extract_roster(edited_df)
                 save_global_settings()
